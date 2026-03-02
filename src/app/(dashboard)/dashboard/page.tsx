@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { FileText, CheckSquare, Store, Users, TrendingUp, Clock, AlertCircle, ListTodo } from 'lucide-react'
+import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, Eye } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function DashboardPage() {
@@ -11,20 +11,22 @@ export default async function DashboardPage() {
   // Get counts
   const today = new Date().toISOString().split('T')[0]
 
-  const [reportsRes, pendingRes, usersRes, storesRes, storeTasksRes] = await Promise.all([
+  const [reportsRes, pendingRes, usersRes, storesRes, storeTasksRes, pendingRequestsRes] = await Promise.all([
     supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
     supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
+    supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
   ])
 
   const stats = [
     { label: '本日の日報', value: reportsRes.count || 0, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
-    { label: '承認待ち', value: pendingRes.count || 0, icon: CheckSquare, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
+    { label: '未確認日報', value: pendingRes.count || 0, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
+    { label: '承認待ち申請', value: pendingRequestsRes.count || 0, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
     { label: '在籍人数', value: usersRes.count || 0, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
     { label: '稼働店舗', value: storesRes.count || 0, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
-    { label: '店舗タスク', value: storeTasksRes.count || 0, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/portal/todo' },
+    { label: '店舗タスク', value: storeTasksRes.count || 0, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/stores' },
   ]
 
   // Recent reports
@@ -34,12 +36,20 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
     .limit(10)
 
-  // Pending approvals
+  // Pending report confirmations
   const { data: pendingApprovals } = await supabase
     .from('approvals')
     .select('*, report:reports(*, user:users(name)), requester:users!approvals_requester_id_fkey(name)')
     .eq('status', 'pending')
     .order('requested_at', { ascending: false })
+    .limit(5)
+
+  // Pending approval requests (申請管理)
+  const { data: pendingRequests } = await supabase
+    .from('approval_requests')
+    .select('*, requester:users!approval_requests_requester_id_fkey(name)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
     .limit(5)
 
   // Recent store tasks
@@ -50,13 +60,22 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
     .limit(5)
 
+  // Pending deadline extension requests for current user
+  const { data: pendingExtensions } = authUser ? await supabase
+    .from('deadline_extension_requests')
+    .select('*, requester:users!deadline_extension_requests_requester_id_fkey(name)')
+    .eq('approver_id', authUser.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(5) : { data: null }
+
   const storeTaskStatusLabels: Record<string, { label: string; color: string }> = {
     todo: { label: '未着手', color: 'bg-gray-50 text-gray-700 border-gray-200' },
     doing: { label: '進行中', color: 'bg-blue-50 text-blue-700 border-blue-200' },
     blocked: { label: 'ブロック', color: 'bg-red-50 text-red-700 border-red-200' },
   }
 
-  // Department stats: member count, today's report submissions, pending approvals
+  // Department stats: member count, today's report submissions, confirmations
   const { data: departments } = await supabase
     .from('departments')
     .select('id, name, code')
@@ -91,7 +110,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
@@ -109,7 +128,105 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* Pending Deadline Extensions */}
+      {pendingExtensions && pendingExtensions.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-500" />
+                期限延長依頼
+              </CardTitle>
+              <CardDescription>{pendingExtensions.length}件の延長依頼</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingExtensions.map((ext: any) => (
+                <Link key={ext.id} href={`/dashboard/reports/${ext.report_id}`}
+                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">{ext.task_title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      申請者: {ext.requester?.name || '不明'} | {ext.original_due_date} → {ext.proposed_due_date}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      申請日: {new Date(ext.created_at).toLocaleDateString('ja-JP')}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 shrink-0">承認待ち</Badge>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Unconfirmed Reports */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Eye className="h-5 w-5 text-orange-500" />
+                未確認日報
+              </CardTitle>
+              <CardDescription>{pendingApprovals?.length || 0}件の未確認</CardDescription>
+            </div>
+            <Link href="/dashboard/approvals/pending" className="text-sm text-blue-600 hover:underline">全て表示</Link>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingApprovals && pendingApprovals.length > 0 ? pendingApprovals.map((approval: any) => (
+                <Link key={approval.id} href={`/dashboard/approvals/${approval.id}`}
+                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
+                  <div>
+                    <p className="font-medium text-sm">{approval.requester?.name}</p>
+                    <p className="text-xs text-muted-foreground">{approval.report?.report_date}</p>
+                  </div>
+                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未確認</Badge>
+                </Link>
+              )) : (
+                <p className="text-sm text-muted-foreground text-center py-4">未確認の日報はありません</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Pending Approval Requests */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-red-500" />
+                承認待ち申請
+              </CardTitle>
+              <CardDescription>{pendingRequests?.length || 0}件の承認待ち</CardDescription>
+            </div>
+            <Link href="/dashboard/approval-requests" className="text-sm text-blue-600 hover:underline">全て表示</Link>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingRequests && pendingRequests.length > 0 ? pendingRequests.map((req: any) => (
+                <Link key={req.id} href={`/dashboard/approval-requests/${req.id}`}
+                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
+                  <div>
+                    <p className="font-medium text-sm">{req.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {req.requester?.name} | {new Date(req.created_at).toLocaleDateString('ja-JP')}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">承認待ち</Badge>
+                </Link>
+              )) : (
+                <p className="text-sm text-muted-foreground text-center py-4">承認待ちの申請はありません</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
         {/* Store Tasks */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -120,7 +237,7 @@ export default async function DashboardPage() {
               </CardTitle>
               <CardDescription>未完了 {storeTasksRes.count || 0}件</CardDescription>
             </div>
-            <Link href="/dashboard/portal/todo" className="text-sm text-blue-600 hover:underline">全て表示</Link>
+            <Link href="/dashboard/stores" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -141,36 +258,6 @@ export default async function DashboardPage() {
                 )
               }) : (
                 <p className="text-sm text-muted-foreground text-center py-4">店舗タスクはありません</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pending Approvals */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-orange-500" />
-                承認待ち
-              </CardTitle>
-              <CardDescription>{pendingApprovals?.length || 0}件の承認待ち</CardDescription>
-            </div>
-            <Link href="/dashboard/approvals/pending" className="text-sm text-blue-600 hover:underline">全て表示</Link>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {pendingApprovals && pendingApprovals.length > 0 ? pendingApprovals.map((approval: any) => (
-                <Link key={approval.id} href={`/dashboard/approvals/${approval.id}`}
-                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
-                  <div>
-                    <p className="font-medium text-sm">{approval.requester?.name}</p>
-                    <p className="text-xs text-muted-foreground">{approval.report?.report_date}</p>
-                  </div>
-                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">承認待ち</Badge>
-                </Link>
-              )) : (
-                <p className="text-sm text-muted-foreground text-center py-4">承認待ちの日報はありません</p>
               )}
             </div>
           </CardContent>
@@ -201,12 +288,10 @@ export default async function DashboardPage() {
                   </div>
                   <Badge variant={
                     report.status === 'approved' ? 'default' :
-                    report.status === 'submitted' ? 'secondary' :
-                    report.status === 'rejected' ? 'destructive' : 'outline'
+                    report.status === 'submitted' ? 'secondary' : 'outline'
                   }>
-                    {report.status === 'approved' ? '承認済' :
-                     report.status === 'submitted' ? '提出済' :
-                     report.status === 'rejected' ? '却下' : '下書き'}
+                    {report.status === 'approved' ? '確認済' :
+                     report.status === 'submitted' ? '提出済' : '下書き'}
                   </Badge>
                 </Link>
               )) : (
@@ -253,7 +338,7 @@ export default async function DashboardPage() {
                     {dept.memberCount}名
                   </span>
                   <span>提出 {dept.submittedCount}/{dept.memberCount}</span>
-                  <span className="text-green-600">承認 {dept.approvedCount}</span>
+                  <span className="text-green-600">確認 {dept.approvedCount}</span>
                 </div>
               </div>
             ))}

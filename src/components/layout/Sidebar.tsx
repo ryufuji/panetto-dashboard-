@@ -4,10 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, FileText, CheckSquare, Store, Megaphone,
+  LayoutDashboard, FileText, CheckSquare, Store,
   Building2, Settings, ChevronLeft, ChevronRight,
-  Users, Calendar, FolderOpen, ListTodo, ClipboardList,
-  BarChart3, GitBranch
+  Users, ClipboardList, BarChart3
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -25,8 +24,11 @@ const navigation = [
   { name: '日報確認', icon: CheckSquare, children: [
     { name: '確認待ち', href: '/dashboard/approvals/pending' },
     { name: '確認済み', href: '/dashboard/approvals/approved' },
-    { name: '却下', href: '/dashboard/approvals/rejected' },
     { name: '統計', href: '/dashboard/approvals/statistics' },
+  ]},
+  { name: 'パフォーマンス分析', icon: BarChart3, children: [
+    { name: '社員ランキング', href: '/dashboard/performance' },
+    { name: '部署比較', href: '/dashboard/performance/departments' },
   ]},
   { name: '申請管理', icon: ClipboardList, children: [
     { name: '申請一覧', href: '/dashboard/approval-requests' },
@@ -36,13 +38,6 @@ const navigation = [
   { name: '店舗運営', icon: Store, children: [
     { name: '店舗一覧', href: '/dashboard/stores' },
     { name: '新規店舗', href: '/dashboard/stores/new' },
-  ]},
-  { name: 'ポータル', icon: Megaphone, children: [
-    { name: '掲示板', href: '/dashboard/portal/board' },
-    { name: 'ToDo', href: '/dashboard/portal/todo' },
-    { name: 'スケジュール', href: '/dashboard/portal/schedule' },
-    { name: 'ファイル', href: '/dashboard/portal/files' },
-    { name: 'お知らせ', href: '/dashboard/portal/announcements' },
   ]},
   { name: '組織管理', icon: Building2, children: [
     { name: '組織図', href: '/dashboard/organization/chart' },

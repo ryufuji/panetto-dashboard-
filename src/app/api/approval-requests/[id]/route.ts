@@ -74,7 +74,7 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { title, description, category, custom_category, amount, file_url } = body
+    const { title, description, category, custom_category, amount, file_url, equipment_purpose, equipment_user } = body
 
     const updateData: Record<string, unknown> = {}
     if (title !== undefined) updateData.title = title.trim()
@@ -83,6 +83,8 @@ export async function PUT(
     if (custom_category !== undefined) updateData.custom_category = category === 'other' ? custom_category?.trim() : null
     if (amount !== undefined) updateData.amount = amount != null ? Number(amount) : null
     if (file_url !== undefined) updateData.file_url = file_url?.trim() || null
+    if (equipment_purpose !== undefined) updateData.equipment_purpose = category === 'equipment_purchase' ? equipment_purpose?.trim() || null : null
+    if (equipment_user !== undefined) updateData.equipment_user = category === 'equipment_purchase' ? equipment_user?.trim() || null : null
 
     const { data, error } = await supabase
       .from('approval_requests')

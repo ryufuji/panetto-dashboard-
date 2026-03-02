@@ -3,7 +3,7 @@ export type UserRole = 'admin' | 'manager' | 'employee'
 export type UserType = 'employee' | 'cast' | 'admin'
 
 // Report status
-export type ReportStatus = 'draft' | 'submitted' | 'approved' | 'rejected'
+export type ReportStatus = 'draft' | 'submitted' | 'approved'
 
 // Approval status
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -97,6 +97,7 @@ export interface User {
   user_type: UserType
   role: UserRole
   position?: string
+  monthly_salary?: number
   hire_date?: string
   report_reviewer_id?: string
   is_active: boolean
@@ -140,6 +141,7 @@ export interface ReportTask {
   progress_rate: number
   task_type?: string
   priority: Priority
+  start_date?: string
   due_date?: string
   order_index: number
   created_at: string
@@ -410,4 +412,32 @@ export interface ApprovalThresholdRule {
   min_amount: number
   max_amount?: number
   required_steps: number
+}
+
+export interface StoreDailyReport {
+  id: string
+  organization_id: string
+  external_user_id: string
+  external_user_name: string
+  store_name: string
+  report_date: string
+  task_count: number
+  completed_count: number
+  created_at: string
+  updated_at: string
+  tasks?: StoreDailyReportTask[]
+}
+
+export interface StoreDailyReportTask {
+  id: string
+  report_id: string
+  external_task_id: string
+  title: string
+  description?: string
+  status: string
+  category: string
+  priority: string
+  start_date?: string
+  due_date?: string
+  synced_at: string
 }

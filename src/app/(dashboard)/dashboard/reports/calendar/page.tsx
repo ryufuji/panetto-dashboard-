@@ -8,7 +8,6 @@ import Link from 'next/link'
 const statusColorMap: Record<string, { dot: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   approved: { dot: 'bg-green-500', variant: 'default' },
   submitted: { dot: 'bg-yellow-500', variant: 'secondary' },
-  rejected: { dot: 'bg-red-500', variant: 'destructive' },
   draft: { dot: 'bg-gray-400', variant: 'outline' },
 }
 
@@ -211,7 +210,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
               const labelMap: Record<string, string> = {
                 approved: '承認済',
                 submitted: '提出済',
-                rejected: '却下',
                 draft: '下書き',
               }
               return (

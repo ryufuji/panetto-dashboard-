@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { title, description, category, custom_category, amount, report_task_id, file_url } = body
+    const { title, description, category, custom_category, amount, report_task_id, file_url, equipment_purpose, equipment_user } = body
 
     if (!title?.trim()) {
       return NextResponse.json({ error: 'タイトルは必須です' }, { status: 400 })
@@ -134,6 +134,8 @@ export async function POST(request: NextRequest) {
         amount: amount != null ? Number(amount) : null,
         report_task_id: report_task_id || null,
         file_url: file_url?.trim() || null,
+        equipment_purpose: category === 'equipment_purchase' ? equipment_purpose?.trim() || null : null,
+        equipment_user: category === 'equipment_purchase' ? equipment_user?.trim() || null : null,
         status: 'draft',
         current_step: 0,
         total_steps: 1,

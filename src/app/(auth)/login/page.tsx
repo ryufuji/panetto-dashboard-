@@ -57,7 +57,7 @@ export default function LoginPage() {
                 type="email"
                 placeholder="email@panetto.co.jp"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value.replace(/\s/g, ''))}
                 required
                 autoComplete="email"
               />
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.replace(/\s/g, ''))}
                 required
                 autoComplete="current-password"
               />

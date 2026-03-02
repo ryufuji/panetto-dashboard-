@@ -33,6 +33,8 @@ export default function EditApprovalRequestPage({ params }: { params: Promise<{ 
   const [category, setCategory] = useState('equipment_purchase')
   const [customCategory, setCustomCategory] = useState('')
   const [amount, setAmount] = useState('')
+  const [equipmentPurpose, setEquipmentPurpose] = useState('')
+  const [equipmentUser, setEquipmentUser] = useState('')
   const [approvers, setApprovers] = useState<string[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [existingAttachments, setExistingAttachments] = useState<any[]>([])
@@ -63,6 +65,8 @@ export default function EditApprovalRequestPage({ params }: { params: Promise<{ 
       setCategory(data.category || 'equipment_purchase')
       setCustomCategory(data.custom_category || '')
       setAmount(data.amount != null ? String(data.amount) : '')
+      setEquipmentPurpose(data.equipment_purpose || '')
+      setEquipmentUser(data.equipment_user || '')
       setExistingAttachments(data.attachments || [])
 
       // Load members
@@ -182,6 +186,8 @@ export default function EditApprovalRequestPage({ params }: { params: Promise<{ 
           category,
           custom_category: category === 'other' ? customCategory.trim() : null,
           amount: amount ? parseFloat(amount) : null,
+          equipment_purpose: category === 'equipment_purchase' ? equipmentPurpose.trim() || null : null,
+          equipment_user: category === 'equipment_purchase' ? equipmentUser.trim() || null : null,
         }),
       })
       const updateJson = await updateRes.json()
@@ -293,6 +299,31 @@ export default function EditApprovalRequestPage({ params }: { params: Promise<{ 
               <Label htmlFor="customCategory">カテゴリ名 <span className="text-red-500">*</span></Label>
               <Input id="customCategory" value={customCategory} onChange={e => setCustomCategory(e.target.value)} disabled={loading} />
             </div>
+          )}
+
+          {category === 'equipment_purchase' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="equipmentPurpose">使用目的</Label>
+                <Input
+                  id="equipmentPurpose"
+                  placeholder="例: 営業資料の印刷用"
+                  value={equipmentPurpose}
+                  onChange={e => setEquipmentPurpose(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="equipmentUser">使用者</Label>
+                <Input
+                  id="equipmentUser"
+                  placeholder="例: 営業部 田中太郎"
+                  value={equipmentUser}
+                  onChange={e => setEquipmentUser(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+            </>
           )}
 
           <div className="space-y-2">

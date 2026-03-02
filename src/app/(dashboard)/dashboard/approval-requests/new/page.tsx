@@ -30,6 +30,8 @@ export default function NewApprovalRequestPage() {
   const [category, setCategory] = useState('equipment_purchase')
   const [customCategory, setCustomCategory] = useState('')
   const [amount, setAmount] = useState('')
+  const [equipmentPurpose, setEquipmentPurpose] = useState('')
+  const [equipmentUser, setEquipmentUser] = useState('')
   const [approvers, setApprovers] = useState<string[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [files, setFiles] = useState<File[]>([])
@@ -157,6 +159,8 @@ export default function NewApprovalRequestPage() {
           category,
           custom_category: category === 'other' ? customCategory.trim() : null,
           amount: amount ? parseFloat(amount) : null,
+          equipment_purpose: category === 'equipment_purchase' ? equipmentPurpose.trim() || null : null,
+          equipment_user: category === 'equipment_purchase' ? equipmentUser.trim() || null : null,
         }),
       })
 
@@ -279,6 +283,31 @@ export default function NewApprovalRequestPage() {
                 disabled={loading}
               />
             </div>
+          )}
+
+          {category === 'equipment_purchase' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="equipmentPurpose">使用目的</Label>
+                <Input
+                  id="equipmentPurpose"
+                  placeholder="例: 営業資料の印刷用"
+                  value={equipmentPurpose}
+                  onChange={e => setEquipmentPurpose(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="equipmentUser">使用者</Label>
+                <Input
+                  id="equipmentUser"
+                  placeholder="例: 営業部 田中太郎"
+                  value={equipmentUser}
+                  onChange={e => setEquipmentUser(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+            </>
           )}
 
           <div className="space-y-2">

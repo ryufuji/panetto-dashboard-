@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, FileText, Download,
-  Loader2, Ban, FileEdit, Send, User, MessageSquare, ClipboardCheck, ExternalLink, Link2
+  Loader2, Ban, FileEdit, Send, User, MessageSquare, ClipboardCheck, ExternalLink, Link2, Forward
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -28,6 +29,7 @@ const STEP_STATUS_CONFIG: Record<string, { label: string; icon: typeof Clock; cl
   pending: { label: '待機中', icon: Clock, className: 'text-orange-500' },
   approved: { label: '承認', icon: CheckCircle2, className: 'text-green-500' },
   rejected: { label: '却下', icon: XCircle, className: 'text-red-500' },
+  delegated: { label: '委任', icon: Forward, className: 'text-purple-500' },
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -42,6 +44,7 @@ const ACTION_LABELS: Record<string, string> = {
   approved: '承認',
   rejected: '却下',
   cancelled: '取消',
+  delegated: '委任',
 }
 
 export default function ApprovalRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,19 +57,30 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
   const [actionLoading, setActionLoading] = useState(false)
   const [comment, setComment] = useState('')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [members, setMembers] = useState<any[]>([])
+  const [delegateeId, setDelegateeId] = useState<string>('')
 
   useEffect(() => {
     const loadData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
 
-      const res = await fetch(`/api/approval-requests/${id}`)
+      const [res, membersRes] = await Promise.all([
+        fetch(`/api/approval-requests/${id}`),
+        fetch('/api/organization/users'),
+      ])
       const json = await res.json()
       if (res.ok) {
         setData(json.data)
       } else {
         toast.error(json.error || '読み込みに失敗しました')
       }
+
+      const membersJson = await membersRes.json()
+      if (membersRes.ok) {
+        setMembers(membersJson.data || [])
+      }
+
       setLoading(false)
     }
     loadData()
@@ -92,6 +106,33 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
       router.push('/dashboard/approval-requests')
     } catch (err: any) {
       toast.error(err.message || '操作に失敗しました')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDelegate = async () => {
+    if (!delegateeId) {
+      toast.error('委任先ユーザーを選択してください')
+      return
+    }
+    setActionLoading(true)
+    try {
+      const res = await fetch(`/api/approval-requests/${id}/delegate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          delegatee_id: delegateeId,
+          comment: comment.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+
+      toast.success('委任しました')
+      router.push('/dashboard/approval-requests')
+    } catch (err: any) {
+      toast.error(err.message || '委任に失敗しました')
     } finally {
       setActionLoading(false)
     }
@@ -192,6 +233,22 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
               <p className="font-medium">{data.requester?.department?.name || '-'}</p>
             </div>
           </div>
+          {data.category === 'equipment_purchase' && (data.equipment_purpose || data.equipment_user) && (
+            <div className="grid grid-cols-2 gap-4">
+              {data.equipment_purpose && (
+                <div>
+                  <p className="text-sm text-muted-foreground">使用目的</p>
+                  <p className="font-medium">{data.equipment_purpose}</p>
+                </div>
+              )}
+              {data.equipment_user && (
+                <div>
+                  <p className="text-sm text-muted-foreground">使用者</p>
+                  <p className="font-medium">{data.equipment_user}</p>
+                </div>
+              )}
+            </div>
+          )}
           {data.description && (
             <div>
               <p className="text-sm text-muted-foreground mb-1">詳細説明</p>
@@ -260,6 +317,7 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
                     <span className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
                       step.status === 'approved' ? 'bg-green-100 text-green-700' :
                       step.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                      step.status === 'delegated' ? 'bg-purple-100 text-purple-700' :
                       isCurrent ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                     }`}>
                       {step.step_number}
@@ -335,7 +393,7 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
         <Card>
           <CardHeader>
             <CardTitle>
-              {isCurrentApprover ? '承認・却下' : '申請の取消'}
+              {isCurrentApprover ? '承認・却下・委任' : '申請の取消'}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -350,9 +408,40 @@ export default function ApprovalRequestDetailPage({ params }: { params: Promise<
                 disabled={actionLoading}
               />
             </div>
+            {isCurrentApprover && (
+              <div className="space-y-2">
+                <Label>委任先ユーザー</Label>
+                <Select value={delegateeId} onValueChange={setDelegateeId} disabled={actionLoading}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="委任先を選択..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members
+                      .filter(m =>
+                        m.id !== currentUserId &&
+                        !data.steps?.some((s: any) => s.approver_id === m.id && s.status === 'pending')
+                      )
+                      .map((m: any) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}{m.department?.name ? ` (${m.department.name})` : ''}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex justify-end gap-3">
               {isCurrentApprover && (
                 <>
+                  <Button
+                    variant="outline"
+                    onClick={handleDelegate}
+                    disabled={actionLoading || !delegateeId}
+                    className="text-purple-600 border-purple-200 hover:bg-purple-50"
+                  >
+                    {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Forward className="mr-2 h-4 w-4" />}
+                    委任
+                  </Button>
                   <Button
                     variant="destructive"
                     onClick={() => handleAction('reject')}

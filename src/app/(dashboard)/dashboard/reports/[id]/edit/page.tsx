@@ -11,9 +11,12 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, ClipboardCopy, Link2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, Link2, Lock, CalendarClock } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval } from '@/types/report'
+import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
+import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 
 const APPROVAL_CATEGORIES = [
   { value: 'equipment_purchase', label: '備品購入' },
@@ -29,44 +32,11 @@ const APPROVAL_STATUS_MAP: Record<string, { label: string; className: string }> 
   cancelled: { label: '取消', className: 'bg-gray-50 text-gray-500' },
 }
 
-interface TaskApproval {
-  enabled: boolean
-  title: string
-  description: string
-  category: string
-  custom_category: string
-  amount: string
-  approvers: string[]
-  file_url: string
-  existing_id?: string
-  existing_status?: string
+const EXTENSION_STATUS_MAP: Record<string, { label: string; className: string }> = {
+  pending: { label: '申請中', className: 'bg-orange-50 text-orange-700' },
+  approved: { label: '承認済み', className: 'bg-green-50 text-green-700' },
+  rejected: { label: '却下', className: 'bg-red-50 text-red-700' },
 }
-
-interface Task {
-  id: string
-  db_id?: string
-  title: string
-  description: string
-  estimated_hours: string
-  actual_hours: string
-  progress_rate: number
-  task_type: string
-  priority: string
-  due_date: string
-  parent_id: string | null
-  approval: TaskApproval
-}
-
-const defaultApproval = (): TaskApproval => ({
-  enabled: false,
-  title: '',
-  description: '',
-  category: 'equipment_purchase',
-  custom_category: '',
-  amount: '',
-  approvers: [],
-  file_url: '',
-})
 
 export default function EditReportPage() {
   const { id } = useParams<{ id: string }>()
@@ -88,8 +58,11 @@ export default function EditReportPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [originalStatus, setOriginalStatus] = useState('')
   const [members, setMembers] = useState<any[]>([])
+  const [allMembers, setAllMembers] = useState<any[]>([])
   const [thresholdRules, setThresholdRules] = useState<any[]>([])
   const [defaultApproverId, setDefaultApproverId] = useState<string | null>(null)
+  const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([])
+  const [extensionForms, setExtensionForms] = useState<Record<string, { open: boolean; proposed_due_date: string; reason: string; approver_id: string; submitting: boolean }>>({})
 
   useEffect(() => {
     fetchReport()
@@ -103,6 +76,7 @@ export default function EditReportPage() {
     const res = await fetch('/api/organization/users')
     const json = await res.json()
     if (res.ok) {
+      setAllMembers(json.data || [])
       setMembers((json.data || []).filter((m: any) => m.id !== user.id))
     }
 
@@ -170,6 +144,7 @@ export default function EditReportPage() {
       const reportTasks = report.tasks || []
       const taskIds = reportTasks.map((t: any) => t.id)
       let approvalMap = new Map<string, any>()
+      let extensionMap = new Map<string, DeadlineExtension[]>()
       if (taskIds.length > 0) {
         const { data: approvalRequests } = await supabase
           .from('approval_requests')
@@ -177,6 +152,19 @@ export default function EditReportPage() {
           .in('report_task_id', taskIds)
         if (approvalRequests) {
           approvalMap = new Map(approvalRequests.map((ar: any) => [ar.report_task_id, ar]))
+        }
+
+        // Fetch deadline extension requests for tasks
+        const extRes = await fetch(`/api/deadline-extensions?report_id=${id}`)
+        const extJson = await extRes.json()
+        if (extRes.ok && extJson.data) {
+          for (const ext of extJson.data) {
+            const key = ext.report_task_id
+            if (key) {
+              if (!extensionMap.has(key)) extensionMap.set(key, [])
+              extensionMap.get(key)!.push(ext)
+            }
+          }
         }
       }
 
@@ -190,6 +178,7 @@ export default function EditReportPage() {
       parentTasks.forEach((pt: any) => {
         const localId = crypto.randomUUID()
         const ar = approvalMap.get(pt.id)
+        const exts = extensionMap.get(pt.id) || []
 
         const approval: TaskApproval = ar
           ? {
@@ -199,12 +188,18 @@ export default function EditReportPage() {
               category: ar.category || 'equipment_purchase',
               custom_category: ar.custom_category || '',
               amount: ar.amount?.toString() || '',
+              equipment_purpose: ar.equipment_purpose || '',
+              equipment_user: ar.equipment_user || '',
               approvers: [],
               file_url: ar.file_url || '',
               existing_id: ar.id,
               existing_status: ar.status,
             }
           : defaultApproval()
+
+        // If there's an approved extension, update the displayed due_date
+        const approvedExt = exts.find(e => e.status === 'approved')
+        const displayDueDate = approvedExt ? approvedExt.proposed_due_date : (pt.due_date || '')
 
         mappedTasks.push({
           id: localId,
@@ -216,9 +211,11 @@ export default function EditReportPage() {
           progress_rate: pt.progress_rate || 0,
           task_type: pt.task_type || '',
           priority: pt.priority || 'medium',
-          due_date: pt.due_date || '',
+          start_date: pt.start_date || '',
+          due_date: displayDueDate,
           parent_id: null,
           approval,
+          deadline_extensions: exts,
         })
 
         // Child tasks
@@ -237,6 +234,7 @@ export default function EditReportPage() {
             progress_rate: ct.progress_rate || 0,
             task_type: ct.task_type || '',
             priority: ct.priority || 'medium',
+            start_date: ct.start_date || '',
             due_date: ct.due_date || '',
             parent_id: localId,
             approval: defaultApproval(),
@@ -254,6 +252,7 @@ export default function EditReportPage() {
           progress_rate: 0,
           task_type: '',
           priority: 'medium',
+          start_date: new Date().toISOString().split('T')[0],
           due_date: '',
           parent_id: null,
           approval: defaultApproval(),
@@ -261,84 +260,26 @@ export default function EditReportPage() {
       }
 
       setTasks(mappedTasks)
+
+      // Fetch planned tasks
+      const { data: existingPlannedTasks } = await supabase
+        .from('report_planned_tasks')
+        .select('*')
+        .eq('report_id', id)
+        .order('order_index', { ascending: true })
+      if (existingPlannedTasks && existingPlannedTasks.length > 0) {
+        setPlannedTasks(existingPlannedTasks.map((pt: any) => ({
+          id: pt.id,
+          title: pt.title || '',
+          estimated_hours: pt.estimated_hours?.toString() || '',
+        })))
+      }
     } catch (err: any) {
       toast.error(err.message || '日報の取得に失敗しました')
       router.push('/dashboard/reports')
     } finally {
       setLoading(false)
     }
-  }
-
-  const carryOverTasks = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: latestReport } = await supabase
-      .from('reports')
-      .select('id, report_date, tasks:report_tasks(*)')
-      .eq('user_id', user.id)
-      .in('status', ['submitted', 'approved'])
-      .order('report_date', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (!latestReport?.tasks?.length) {
-      toast.info('引き継ぎ可能なタスクがありません')
-      return
-    }
-
-    const incompletePT = latestReport.tasks
-      .filter((t: any) => !t.parent_task_id && t.progress_rate < 100)
-      .sort((a: any, b: any) => a.order_index - b.order_index)
-
-    if (incompletePT.length === 0) {
-      toast.info('未完了のタスクはありません')
-      return
-    }
-
-    const newTasks: Task[] = []
-    for (const pt of incompletePT) {
-      const localId = crypto.randomUUID()
-      newTasks.push({
-        id: localId,
-        title: pt.title || '',
-        description: pt.description || '',
-        estimated_hours: pt.estimated_hours?.toString() || '',
-        actual_hours: '',
-        progress_rate: pt.progress_rate,
-        task_type: pt.task_type || '',
-        priority: pt.priority || 'medium',
-        due_date: pt.due_date || '',
-        parent_id: null,
-        approval: defaultApproval(),
-      })
-
-      const children = latestReport.tasks
-        .filter((t: any) => t.parent_task_id === pt.id)
-        .sort((a: any, b: any) => a.order_index - b.order_index)
-      for (const ct of children) {
-        newTasks.push({
-          id: crypto.randomUUID(),
-          title: ct.title || '',
-          description: ct.description || '',
-          estimated_hours: ct.estimated_hours?.toString() || '',
-          actual_hours: '',
-          progress_rate: ct.progress_rate,
-          task_type: ct.task_type || '',
-          priority: ct.priority || 'medium',
-          due_date: ct.due_date || '',
-          parent_id: localId,
-          approval: defaultApproval(),
-        })
-      }
-    }
-
-    setTasks(prev => {
-      const existing = prev.filter(t => t.title.trim() !== '')
-      return [...existing, ...newTasks]
-    })
-
-    toast.success(`${incompletePT.length}件のタスクを引き継ぎました（${latestReport.report_date}）`)
   }
 
   const addTask = (parentId: string | null = null) => {
@@ -351,6 +292,7 @@ export default function EditReportPage() {
       progress_rate: 0,
       task_type: '',
       priority: 'medium',
+      start_date: new Date().toISOString().split('T')[0],
       due_date: '',
       parent_id: parentId,
       approval: defaultApproval(),
@@ -393,6 +335,76 @@ export default function EditReportPage() {
       if (t.id !== taskId) return t
       return { ...t, approval: { ...t.approval, approvers: t.approval.approvers.filter(aid => aid !== userId) } }
     }))
+  }
+
+  const isDeadlineLocked = (task: Task) => {
+    return !!task.db_id && !!task.due_date
+  }
+
+  const toggleExtensionForm = (taskId: string) => {
+    setExtensionForms(prev => ({
+      ...prev,
+      [taskId]: prev[taskId]?.open
+        ? { ...prev[taskId], open: false }
+        : { open: true, proposed_due_date: '', reason: '', approver_id: defaultApproverId || '', submitting: false },
+    }))
+  }
+
+  const updateExtensionForm = (taskId: string, field: string, value: string) => {
+    setExtensionForms(prev => ({
+      ...prev,
+      [taskId]: { ...prev[taskId], [field]: value },
+    }))
+  }
+
+  const submitExtension = async (task: Task) => {
+    const form = extensionForms[task.id]
+    if (!form || !task.db_id) return
+
+    if (!form.proposed_due_date) {
+      toast.error('新しい期限を入力してください')
+      return
+    }
+    if (!form.approver_id) {
+      toast.error('承認者を選択してください')
+      return
+    }
+    if (form.proposed_due_date <= task.due_date) {
+      toast.error('新しい期限は現在の期限より後の日付にしてください')
+      return
+    }
+
+    setExtensionForms(prev => ({ ...prev, [task.id]: { ...prev[task.id], submitting: true } }))
+
+    try {
+      const res = await fetch('/api/deadline-extensions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report_task_id: task.db_id,
+          approver_id: form.approver_id,
+          proposed_due_date: form.proposed_due_date,
+          reason: form.reason.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+
+      toast.success('期限延長申請を送信しました')
+
+      // Add extension to task state
+      setTasks(prev => prev.map(t => {
+        if (t.id !== task.id) return t
+        return {
+          ...t,
+          deadline_extensions: [...(t.deadline_extensions || []), json.data],
+        }
+      }))
+      setExtensionForms(prev => ({ ...prev, [task.id]: { ...prev[task.id], open: false, submitting: false } }))
+    } catch (err: any) {
+      toast.error(err.message || '延長申請の送信に失敗しました')
+      setExtensionForms(prev => ({ ...prev, [task.id]: { ...prev[task.id], submitting: false } }))
+    }
   }
 
   const handleSubmit = async (status: 'draft' | 'submitted') => {
@@ -440,6 +452,16 @@ export default function EditReportPage() {
           enabled: t.approval.enabled,
         }))
 
+      // Collect existing deadline extension info before task deletion
+      const existingExtensions = tasks
+        .filter(t => !t.parent_id && t.deadline_extensions && t.deadline_extensions.length > 0)
+        .flatMap(t => t.deadline_extensions!.map(ext => ({
+          localId: t.id,
+          extensionId: ext.id,
+          taskTitle: t.title,
+          originalDueDate: ext.original_due_date,
+        })))
+
       // Update report
       const { error: reportError } = await supabase
         .from('reports')
@@ -463,10 +485,10 @@ export default function EditReportPage() {
       if (reportError) throw reportError
 
       // Delete existing tasks and re-insert
-      // ON DELETE SET NULL will detach approval_requests.report_task_id
+      // ON DELETE SET NULL will detach approval_requests.report_task_id and deadline_extension_requests.report_task_id
       await supabase.from('report_tasks').delete().eq('report_id', id)
 
-      // Insert updated tasks and re-link approvals
+      // Insert updated tasks and re-link approvals + extensions
       const parentTasks = tasks.filter(t => !t.parent_id && t.title.trim())
       for (let i = 0; i < parentTasks.length; i++) {
         const pt = parentTasks[i]
@@ -479,6 +501,7 @@ export default function EditReportPage() {
           progress_rate: pt.progress_rate,
           task_type: pt.task_type || null,
           priority: pt.priority,
+          start_date: pt.start_date || null,
           due_date: pt.due_date || null,
           order_index: i,
         }).select().single()
@@ -506,6 +529,8 @@ export default function EditReportPage() {
                     custom_category: pt.approval.category === 'other' ? pt.approval.custom_category.trim() : null,
                     amount: pt.approval.amount ? parseFloat(pt.approval.amount) : null,
                     file_url: pt.approval.file_url.trim() || null,
+                    equipment_purpose: pt.approval.category === 'equipment_purchase' ? pt.approval.equipment_purpose.trim() || null : null,
+                    equipment_user: pt.approval.category === 'equipment_purchase' ? pt.approval.equipment_user.trim() || null : null,
                   }),
                 })
 
@@ -536,6 +561,8 @@ export default function EditReportPage() {
                 custom_category: pt.approval.category === 'other' ? pt.approval.custom_category.trim() : null,
                 amount: pt.approval.amount ? parseFloat(pt.approval.amount) : null,
                 file_url: pt.approval.file_url.trim() || null,
+                equipment_purpose: pt.approval.category === 'equipment_purchase' ? pt.approval.equipment_purpose.trim() || null : null,
+                equipment_user: pt.approval.category === 'equipment_purchase' ? pt.approval.equipment_user.trim() || null : null,
                 report_task_id: savedTask.id,
               }),
             })
@@ -549,6 +576,16 @@ export default function EditReportPage() {
                 body: JSON.stringify({ approvers: pt.approval.approvers }),
               })
             }
+          }
+
+          // Re-link deadline extension requests
+          const taskExtensions = existingExtensions.filter(ee => ee.localId === pt.id)
+          for (const ee of taskExtensions) {
+            await fetch('/api/deadline-extensions', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: ee.extensionId, report_task_id: savedTask.id }),
+            })
           }
         }
 
@@ -566,10 +603,23 @@ export default function EditReportPage() {
             progress_rate: ct.progress_rate,
             task_type: ct.task_type || null,
             priority: ct.priority,
+            start_date: ct.start_date || null,
             due_date: ct.due_date || null,
             order_index: j,
           })
         }
+      }
+
+      // Delete and re-insert planned tasks
+      await supabase.from('report_planned_tasks').delete().eq('report_id', id)
+      const validPlannedTasks = plannedTasks.filter(pt => pt.title.trim())
+      for (let i = 0; i < validPlannedTasks.length; i++) {
+        await supabase.from('report_planned_tasks').insert({
+          report_id: id,
+          title: validPlannedTasks[i].title.trim(),
+          estimated_hours: validPlannedTasks[i].estimated_hours ? parseFloat(validPlannedTasks[i].estimated_hours) : null,
+          order_index: i,
+        })
       }
 
       toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
@@ -660,9 +710,7 @@ export default function EditReportPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>タスク一覧</CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={carryOverTasks}>
-              <ClipboardCopy className="mr-1 h-4 w-4" />前日タスク引き継ぎ
-            </Button>
+            <TaskCarryOverMenu tasks={tasks} setTasks={setTasks} />
             <Button variant="outline" size="sm" onClick={() => addTask(null)}>
               <Plus className="mr-1 h-4 w-4" />親タスク追加
             </Button>
@@ -673,6 +721,11 @@ export default function EditReportPage() {
             const children = tasks.filter(t => t.parent_id === task.id)
             const isExistingNonDraft = task.approval.existing_id && task.approval.existing_status !== 'draft'
             const requiredSteps = getRequiredSteps(task.approval.amount)
+            const locked = isDeadlineLocked(task)
+            const pendingExt = task.deadline_extensions?.find(e => e.status === 'pending')
+            const rejectedExt = task.deadline_extensions?.find(e => e.status === 'rejected')
+            const canRequestExtension = locked && !pendingExt
+            const extForm = extensionForms[task.id]
             return (
               <div key={task.id} className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-center gap-2">
@@ -688,7 +741,7 @@ export default function EditReportPage() {
                 </div>
                 <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-6 gap-2">
                   <div>
                     <Label className="text-xs">見積(h)</Label>
                     <Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
@@ -713,10 +766,120 @@ export default function EditReportPage() {
                     </Select>
                   </div>
                   <div>
+                    <Label className="text-xs">開始日</Label>
+                    <Input type="date" value={task.start_date} onChange={e => updateTask(task.id, 'start_date', e.target.value)} />
+                  </div>
+                  <div>
                     <Label className="text-xs">期限</Label>
-                    <Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} />
+                    {locked ? (
+                      <div className="flex items-center gap-1">
+                        <Input type="date" value={task.due_date} disabled className="bg-gray-50" />
+                        <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      </div>
+                    ) : (
+                      <Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} />
+                    )}
                   </div>
                 </div>
+
+                {/* Deadline extension section */}
+                {locked && (
+                  <div className="space-y-2">
+                    {/* Show pending extension */}
+                    {pendingExt && (
+                      <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50/30 p-3">
+                        <CalendarClock className="h-4 w-4 text-orange-500 shrink-0" />
+                        <div className="flex-1 text-sm">
+                          <span className="font-medium">期限延長申請中</span>
+                          <span className="text-muted-foreground ml-2">
+                            {pendingExt.original_due_date} → {pendingExt.proposed_due_date}
+                          </span>
+                        </div>
+                        <Badge className={EXTENSION_STATUS_MAP.pending.className}>{EXTENSION_STATUS_MAP.pending.label}</Badge>
+                      </div>
+                    )}
+
+                    {/* Show rejected extension */}
+                    {rejectedExt && !pendingExt && (
+                      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/30 p-3">
+                        <CalendarClock className="h-4 w-4 text-red-500 shrink-0" />
+                        <div className="flex-1 text-sm">
+                          <span className="font-medium">期限延長申請が却下されました</span>
+                          {rejectedExt.approver_comment && (
+                            <p className="text-xs text-muted-foreground mt-1">コメント: {rejectedExt.approver_comment}</p>
+                          )}
+                        </div>
+                        <Badge className={EXTENSION_STATUS_MAP.rejected.className}>{EXTENSION_STATUS_MAP.rejected.label}</Badge>
+                      </div>
+                    )}
+
+                    {/* Extension request button & form */}
+                    {canRequestExtension && (
+                      <>
+                        {!extForm?.open ? (
+                          <Button variant="outline" size="sm" onClick={() => toggleExtensionForm(task.id)}>
+                            <CalendarClock className="mr-1 h-3.5 w-3.5" />期限延長申請
+                          </Button>
+                        ) : (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium flex items-center gap-1">
+                                <CalendarClock className="h-4 w-4 text-amber-600" />
+                                期限延長申請
+                              </span>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleExtensionForm(task.id)}>
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <Label className="text-xs">現在の期限</Label>
+                                <Input type="date" value={task.due_date} disabled className="bg-gray-50" />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">新しい期限 <span className="text-red-500">*</span></Label>
+                                <Input
+                                  type="date"
+                                  value={extForm.proposed_due_date}
+                                  min={task.due_date}
+                                  onChange={e => updateExtensionForm(task.id, 'proposed_due_date', e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">理由</Label>
+                              <Textarea
+                                placeholder="延長が必要な理由..."
+                                value={extForm.reason}
+                                onChange={e => updateExtensionForm(task.id, 'reason', e.target.value)}
+                                rows={2}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">承認者 <span className="text-red-500">*</span></Label>
+                              <Select value={extForm.approver_id} onValueChange={v => updateExtensionForm(task.id, 'approver_id', v)}>
+                                <SelectTrigger><SelectValue placeholder="承認者を選択..." /></SelectTrigger>
+                                <SelectContent>
+                                  {members.map(m => (
+                                    <SelectItem key={m.id} value={m.id}>
+                                      {m.name}{m.department?.name ? ` (${m.department.name})` : ''}{m.id === defaultApproverId ? ' (部署長)' : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex justify-end">
+                              <Button size="sm" onClick={() => submitExtension(task)} disabled={extForm.submitting}>
+                                {extForm.submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}
+                                申請
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {children.map((child, j) => (
                   <div key={child.id} className="ml-6 rounded-lg border border-dashed p-3 space-y-2">
@@ -728,7 +891,7 @@ export default function EditReportPage() {
                       </Button>
                     </div>
                     <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-5 gap-2">
                       <div>
                         <Label className="text-xs">見積(h)</Label>
                         <Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} />
@@ -740,6 +903,10 @@ export default function EditReportPage() {
                       <div>
                         <Label className="text-xs">進捗(%)</Label>
                         <Input type="number" min="0" max="100" value={child.progress_rate} onChange={e => updateTask(child.id, 'progress_rate', parseInt(e.target.value) || 0)} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">開始日</Label>
+                        <Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} />
                       </div>
                       <div>
                         <Label className="text-xs">期限</Label>
@@ -819,6 +986,27 @@ export default function EditReportPage() {
                                 onChange={e => updateTaskApproval(task.id, 'custom_category', e.target.value)}
                               />
                             </div>
+                          )}
+
+                          {task.approval.category === 'equipment_purchase' && (
+                            <>
+                              <div className="space-y-2">
+                                <Label className="text-xs">使用目的</Label>
+                                <Input
+                                  placeholder="例: 営業資料の印刷用"
+                                  value={task.approval.equipment_purpose}
+                                  onChange={e => updateTaskApproval(task.id, 'equipment_purpose', e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs">使用者</Label>
+                                <Input
+                                  placeholder="例: 営業部 田中太郎"
+                                  value={task.approval.equipment_user}
+                                  onChange={e => updateTaskApproval(task.id, 'equipment_user', e.target.value)}
+                                />
+                              </div>
+                            </>
                           )}
 
                           <div className="space-y-2">
@@ -925,6 +1113,43 @@ export default function EditReportPage() {
           </div>
           <div className="space-y-2">
             <Label>翌日の予定</Label>
+            <div className="space-y-2 ml-1">
+              {plannedTasks.map((pt) => (
+                <div key={pt.id} className="flex items-center gap-2">
+                  <Input
+                    placeholder="タスク名"
+                    value={pt.title}
+                    onChange={e => setPlannedTasks(prev => prev.map(t => t.id === pt.id ? { ...t, title: e.target.value } : t))}
+                    className="flex-1"
+                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Input
+                      type="number"
+                      step="0.5"
+                      placeholder="0"
+                      value={pt.estimated_hours}
+                      onChange={e => setPlannedTasks(prev => prev.map(t => t.id === pt.id ? { ...t, estimated_hours: e.target.value } : t))}
+                      className="w-20"
+                    />
+                    <span className="text-xs text-muted-foreground">h</span>
+                  </div>
+                  <Button variant="ghost" size="sm" className="text-red-500 shrink-0 h-8 w-8 p-0" onClick={() => setPlannedTasks(prev => prev.filter(t => t.id !== pt.id))}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPlannedTasks(prev => [...prev, { id: crypto.randomUUID(), title: '', estimated_hours: '' }])}
+                >
+                  <Plus className="mr-1 h-4 w-4" />タスク追加
+                </Button>
+                <PlannedTaskCarryOverMenu plannedTasks={plannedTasks} setPlannedTasks={setPlannedTasks} />
+              </div>
+            </div>
+            <Label className="text-sm text-muted-foreground">メモ（任意）</Label>
             <Textarea placeholder="翌日の予定を入力..." value={tomorrowPlan || nextDayPlan} onChange={e => { setTomorrowPlan(e.target.value); setNextDayPlan(e.target.value) }} rows={3} />
           </div>
         </CardContent>

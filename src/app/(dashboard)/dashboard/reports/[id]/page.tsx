@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2 } from 'lucide-react'
+import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2, CalendarClock, Check, X, Eye, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -26,7 +28,6 @@ const statusMap: Record<string, { label: string; variant: 'default' | 'secondary
   draft: { label: '下書き', variant: 'outline' },
   submitted: { label: '提出済', variant: 'secondary' },
   approved: { label: '承認済', variant: 'default' },
-  rejected: { label: '却下', variant: 'destructive' },
 }
 
 const APPROVAL_STATUS_MAP: Record<string, { label: string; className: string }> = {
@@ -35,6 +36,12 @@ const APPROVAL_STATUS_MAP: Record<string, { label: string; className: string }> 
   approved: { label: '承認済み', className: 'bg-green-50 text-green-700' },
   rejected: { label: '却下', className: 'bg-red-50 text-red-700' },
   cancelled: { label: '取消', className: 'bg-gray-50 text-gray-500' },
+}
+
+const EXTENSION_STATUS_MAP: Record<string, { label: string; className: string }> = {
+  pending: { label: '申請中', className: 'bg-orange-50 text-orange-700' },
+  approved: { label: '承認済み', className: 'bg-green-50 text-green-700' },
+  rejected: { label: '却下', className: 'bg-red-50 text-red-700' },
 }
 
 export default function ReportDetailPage() {
@@ -49,6 +56,11 @@ export default function ReportDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [sendingComment, setSendingComment] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deadlineExtensions, setDeadlineExtensions] = useState<any[]>([])
+  const [extensionActions, setExtensionActions] = useState<Record<string, { comment: string; acting: boolean }>>({})
+  const [plannedTasks, setPlannedTasks] = useState<any[]>([])
+  const [reportViews, setReportViews] = useState<any[]>([])
+  const [viewRecorded, setViewRecorded] = useState(false)
 
   const fetchReport = useCallback(async () => {
     try {
@@ -56,6 +68,30 @@ export default function ReportDetailPage() {
       if (!res.ok) throw new Error('Failed to fetch report')
       const json = await res.json()
       setReport(json.data)
+
+      // Fetch deadline extensions for this report
+      const extRes = await fetch(`/api/deadline-extensions?report_id=${id}`)
+      const extJson = await extRes.json()
+      if (extRes.ok) {
+        setDeadlineExtensions(extJson.data || [])
+      }
+
+      // Fetch planned tasks
+      const ptRes = await supabase
+        .from('report_planned_tasks')
+        .select('*')
+        .eq('report_id', id)
+        .order('order_index', { ascending: true })
+      if (ptRes.data) {
+        setPlannedTasks(ptRes.data)
+      }
+
+      // Fetch view records
+      const viewsRes = await fetch(`/api/reports/${id}/views`)
+      const viewsJson = await viewsRes.json()
+      if (viewsRes.ok) {
+        setReportViews(viewsJson.data || [])
+      }
     } catch {
       toast.error('日報の取得に失敗しました')
     } finally {
@@ -75,6 +111,23 @@ export default function ReportDetailPage() {
     getUser()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Record view when page loads (non-author only)
+  useEffect(() => {
+    if (!currentUserId || !report || viewRecorded) return
+    if (currentUserId === report.user_id) return // Don't record author's own view
+    setViewRecorded(true)
+    fetch(`/api/reports/${id}/views`, { method: 'POST' }).then(async (res) => {
+      if (res.ok) {
+        // Refresh views list
+        const viewsRes = await fetch(`/api/reports/${id}/views`)
+        const viewsJson = await viewsRes.json()
+        if (viewsRes.ok) {
+          setReportViews(viewsJson.data || [])
+        }
+      }
+    })
+  }, [currentUserId, report, viewRecorded, id])
 
   const handleSubmitReport = async () => {
     setSubmitting(true)
@@ -130,6 +183,32 @@ export default function ReportDetailPage() {
     }
   }
 
+  const handleExtensionAction = async (extId: string, action: 'approve' | 'reject') => {
+    const actionState = extensionActions[extId]
+    setExtensionActions(prev => ({ ...prev, [extId]: { ...prev[extId], acting: true } }))
+
+    try {
+      const res = await fetch(`/api/deadline-extensions/${extId}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment: actionState?.comment?.trim() || null }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+
+      toast.success(action === 'approve' ? '期限延長を承認しました' : '期限延長を却下しました')
+      setExtensionActions(prev => {
+        const next = { ...prev }
+        delete next[extId]
+        return next
+      })
+      await fetchReport()
+    } catch (err: any) {
+      toast.error(err.message || '処理に失敗しました')
+      setExtensionActions(prev => ({ ...prev, [extId]: { ...prev[extId], acting: false } }))
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -149,6 +228,16 @@ export default function ReportDetailPage() {
   const st = statusMap[report.status] || statusMap.draft
   const parentTasks = (report.tasks || []).filter((t: any) => !t.parent_task_id).sort((a: any, b: any) => a.order_index - b.order_index)
   const isAuthor = currentUserId === report.user_id
+
+  // Build extension map by report_task_id
+  const extensionsByTask = new Map<string, any[]>()
+  for (const ext of deadlineExtensions) {
+    const key = ext.report_task_id
+    if (key) {
+      if (!extensionsByTask.has(key)) extensionsByTask.set(key, [])
+      extensionsByTask.get(key)!.push(ext)
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -191,19 +280,17 @@ export default function ReportDetailPage() {
           </>
         )}
 
-        {report.status === 'rejected' && isAuthor && (
-          <Link href={`/dashboard/reports/${id}/edit`}>
-            <Button variant="outline" size="sm">
-              <Pencil className="mr-1 h-4 w-4" />編集
-            </Button>
-          </Link>
-        )}
-
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{report.title || `${report.report_date}の日報`}</h1>
           <p className="text-sm text-muted-foreground">{(report.user as any)?.name} | {(report.user as any)?.department?.name}</p>
         </div>
         <Badge variant={st.variant} className="text-sm">{st.label}</Badge>
+        {reportViews.length > 0 && (
+          <Badge variant="outline" className="text-sm flex items-center gap-1 border-emerald-300 text-emerald-700">
+            <Eye className="h-3.5 w-3.5" />
+            確認済 {reportViews.length}人
+          </Badge>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -225,6 +312,7 @@ export default function ReportDetailPage() {
             <div className="space-y-4">
               {parentTasks.map((task: any) => {
                 const children = (report.tasks || []).filter((t: any) => t.parent_task_id === task.id).sort((a: any, b: any) => a.order_index - b.order_index)
+                const taskExtensions = extensionsByTask.get(task.id) || []
                 return (
                   <div key={task.id} className="rounded-lg border p-4">
                     <div className="flex items-center justify-between mb-2">
@@ -238,7 +326,79 @@ export default function ReportDetailPage() {
                       <span>見積: {task.estimated_hours || '-'}h</span>
                       <span>実績: {task.actual_hours || '-'}h</span>
                       <span>進捗: {task.progress_rate}%</span>
+                      {task.due_date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          期限: {task.due_date}
+                        </span>
+                      )}
                     </div>
+
+                    {/* Deadline extension status */}
+                    {taskExtensions.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {taskExtensions.map((ext: any) => {
+                          const extStatus = EXTENSION_STATUS_MAP[ext.status]
+                          const isApprover = currentUserId === ext.approver_id
+                          const isPending = ext.status === 'pending'
+                          const actionState = extensionActions[ext.id]
+                          return (
+                            <div key={ext.id} className={`rounded-lg border p-3 ${isPending ? 'border-orange-200 bg-orange-50/30' : ext.status === 'approved' ? 'border-green-200 bg-green-50/30' : 'border-red-200 bg-red-50/30'}`}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <span className="text-sm font-medium">期限延長</span>
+                                <Badge className={extStatus?.className || ''}>{extStatus?.label || ext.status}</Badge>
+                                <span className="text-xs text-muted-foreground ml-auto">
+                                  申請者: {ext.requester?.name || '不明'}
+                                </span>
+                              </div>
+                              <div className="text-sm text-muted-foreground ml-6">
+                                <span>{ext.original_due_date} → {ext.proposed_due_date}</span>
+                                {ext.reason && <p className="mt-1">理由: {ext.reason}</p>}
+                                {ext.approver_comment && <p className="mt-1">コメント: {ext.approver_comment}</p>}
+                              </div>
+
+                              {/* Approver actions */}
+                              {isApprover && isPending && (
+                                <div className="mt-3 ml-6 space-y-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">コメント（任意）</Label>
+                                    <Input
+                                      placeholder="コメントを入力..."
+                                      value={actionState?.comment || ''}
+                                      onChange={e => setExtensionActions(prev => ({
+                                        ...prev,
+                                        [ext.id]: { comment: e.target.value, acting: false },
+                                      }))}
+                                    />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleExtensionAction(ext.id, 'approve')}
+                                      disabled={actionState?.acting}
+                                    >
+                                      {actionState?.acting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1 h-3.5 w-3.5" />}
+                                      承認
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleExtensionAction(ext.id, 'reject')}
+                                      disabled={actionState?.acting}
+                                    >
+                                      {actionState?.acting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <X className="mr-1 h-3.5 w-3.5" />}
+                                      却下
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
                     {children.length > 0 && (
                       <div className="mt-3 ml-4 space-y-2 border-l pl-4">
                         {children.map((child: any) => (
@@ -248,6 +408,12 @@ export default function ReportDetailPage() {
                               <span>見積: {child.estimated_hours || '-'}h</span>
                               <span>実績: {child.actual_hours || '-'}h</span>
                               <span>進捗: {child.progress_rate}%</span>
+                              {child.due_date && (
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  期限: {child.due_date}
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -291,10 +457,25 @@ export default function ReportDetailPage() {
         </CardContent>
       </Card>
 
-      {report.next_day_plan && (
+      {(plannedTasks.length > 0 || report.next_day_plan) && (
         <Card>
           <CardHeader><CardTitle>翌日の予定</CardTitle></CardHeader>
-          <CardContent><p className="whitespace-pre-wrap">{report.next_day_plan}</p></CardContent>
+          <CardContent className="space-y-3">
+            {plannedTasks.length > 0 && (
+              <ul className="space-y-1">
+                {plannedTasks.map((pt: any) => (
+                  <li key={pt.id} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">・</span>
+                    <span>{pt.title}</span>
+                    {pt.estimated_hours != null && (
+                      <span className="text-muted-foreground">({Number(pt.estimated_hours)}h)</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {report.next_day_plan && <p className="whitespace-pre-wrap">{report.next_day_plan}</p>}
+          </CardContent>
         </Card>
       )}
 
@@ -311,6 +492,32 @@ export default function ReportDetailPage() {
                 <p className="text-sm">{c.content}</p>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {reportViews.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              確認者一覧（{reportViews.length}人）
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {reportViews.map((v: any) => (
+                <div key={v.id} className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">{v.user?.name || '不明'}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(v.viewed_at).toLocaleString('ja-JP')}
+                  </span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('users')
-      .select('*, department:departments!users_department_id_fkey(*), office:offices!users_office_id_fkey(*), report_reviewer:users!users_report_reviewer_id_fkey(id, name)')
+      .select('*, department:departments!users_department_id_fkey(*), office:offices!users_office_id_fkey(*)')
       .order('name', { ascending: true })
 
     if (departmentId) {
@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { user_id, employee_number, position, department_id, office_id, report_reviewer_id } = body
+    const { user_id, employee_number, position, department_id, office_id, report_reviewer_id, monthly_salary } = body
 
     if (!user_id) {
       return NextResponse.json(
@@ -88,6 +88,7 @@ export async function PATCH(request: NextRequest) {
     if (department_id !== undefined) updates.department_id = (department_id === 'none' ? null : department_id) || null
     if (office_id !== undefined) updates.office_id = (office_id === 'none' ? null : office_id) || null
     if (report_reviewer_id !== undefined) updates.report_reviewer_id = (report_reviewer_id === 'none' ? null : report_reviewer_id) || null
+    if (monthly_salary !== undefined) updates.monthly_salary = monthly_salary != null && monthly_salary !== '' ? Number(monthly_salary) : null
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(

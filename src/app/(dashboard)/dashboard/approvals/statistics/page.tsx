@@ -1,28 +1,26 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { CheckCircle, XCircle, Clock, BarChart3 } from 'lucide-react'
+import { CheckCircle, Clock, BarChart3 } from 'lucide-react'
 
 export default async function ApprovalStatisticsPage() {
   const supabase = await createClient()
 
-  const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+  const [pendingRes, approvedRes] = await Promise.all([
     supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
-    supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'rejected'),
   ])
 
   const stats = [
     { label: '確認待ち', value: pendingRes.count || 0, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
     { label: '確認済み', value: approvedRes.count || 0, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: '却下', value: rejectedRes.count || 0, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
   ]
 
-  const total = (pendingRes.count || 0) + (approvedRes.count || 0) + (rejectedRes.count || 0)
+  const total = (pendingRes.count || 0) + (approvedRes.count || 0)
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">確認統計</h1>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {stats.map(s => (
           <Card key={s.label}>
             <CardContent className="flex items-center gap-4 p-6">

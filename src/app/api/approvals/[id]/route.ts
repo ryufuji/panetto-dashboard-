@@ -54,7 +54,7 @@ export async function PATCH(
     const body = await request.json()
     const { status, comment } = body
 
-    const validStatuses = ['approved', 'rejected']
+    const validStatuses = ['approved']
     if (!status || !validStatuses.includes(status)) {
       return NextResponse.json(
         { error: `status must be one of: ${validStatuses.join(', ')}` },
@@ -113,7 +113,7 @@ export async function PATCH(
       )
     }
 
-    const reportStatus = status === 'approved' ? 'approved' : 'rejected'
+    const reportStatus = 'approved'
     const { error: reportError } = await supabase
       .from('reports')
       .update({ status: reportStatus })

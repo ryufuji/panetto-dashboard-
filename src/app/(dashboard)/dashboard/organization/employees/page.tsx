@@ -19,6 +19,7 @@ const roleLabels: Record<string, string> = { admin: '管理者', manager: '部�
 interface EditForm {
   employee_number: string
   position: string
+  monthly_salary: string
   department_id: string
   office_id: string
   report_reviewer_id: string
@@ -32,7 +33,7 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [editUser, setEditUser] = useState<any>(null)
-  const [editForm, setEditForm] = useState<EditForm>({ employee_number: '', position: '', department_id: '', office_id: '', report_reviewer_id: '' })
+  const [editForm, setEditForm] = useState<EditForm>({ employee_number: '', position: '', monthly_salary: '', department_id: '', office_id: '', report_reviewer_id: '' })
   const [saving, setSaving] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ email: '', password: '', name: '', employee_number: '', position: '', department_id: '', office_id: '', role: 'employee', report_reviewer_id: '' })
@@ -45,12 +46,20 @@ export default function EmployeesPage() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
 
     const [usersRes, deptsRes, officesRes] = await Promise.all([
-      supabase.from('users').select('*, department:departments!users_department_id_fkey(name, manager_id), office:offices!users_office_id_fkey(name), report_reviewer:users!users_report_reviewer_id_fkey(id, name)').eq('is_active', true).order('name'),
+      supabase.from('users').select('*, department:departments!users_department_id_fkey(name, manager_id), office:offices!users_office_id_fkey(name)').eq('is_active', true).order('name'),
       supabase.from('departments').select('id, name').eq('is_active', true).order('order_index'),
       supabase.from('offices').select('id, name').eq('is_active', true).order('name'),
     ])
 
-    if (usersRes.data) setUsers(usersRes.data)
+    if (usersRes.data) {
+      // Build reviewer lookup from the same user list
+      const userMap = new Map(usersRes.data.map((u: any) => [u.id, u]))
+      const usersWithReviewer = usersRes.data.map((u: any) => {
+        const reviewer = u.report_reviewer_id ? userMap.get(u.report_reviewer_id) : null
+        return { ...u, report_reviewer: reviewer ? { id: reviewer.id, name: reviewer.name } : null }
+      })
+      setUsers(usersWithReviewer)
+    }
     if (deptsRes.data) setDepartments(deptsRes.data)
     if (officesRes.data) setOffices(officesRes.data)
 
@@ -68,6 +77,7 @@ export default function EmployeesPage() {
     setEditForm({
       employee_number: u.employee_number || '',
       position: u.position || '',
+      monthly_salary: u.monthly_salary != null ? String(u.monthly_salary) : '',
       department_id: u.department_id || '',
       office_id: u.office_id || '',
       report_reviewer_id: u.report_reviewer_id || '',
@@ -85,6 +95,7 @@ export default function EmployeesPage() {
         user_id: editUser.id,
         employee_number: editForm.employee_number,
         position: editForm.position,
+        monthly_salary: editForm.monthly_salary,
         department_id: editForm.department_id,
         office_id: editForm.office_id,
         report_reviewer_id: editForm.report_reviewer_id,
@@ -445,6 +456,16 @@ export default function EmployeesPage() {
                 value={editForm.position}
                 onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
                 placeholder="例: 課長"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>月給（万円）</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editForm.monthly_salary}
+                onChange={(e) => setEditForm({ ...editForm, monthly_salary: e.target.value })}
+                placeholder="例: 30"
               />
             </div>
             <div className="space-y-2">

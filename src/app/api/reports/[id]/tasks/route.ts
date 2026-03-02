@@ -53,6 +53,7 @@ export async function POST(
       progress_rate = 0,
       task_type,
       priority = 'medium',
+      start_date,
       due_date,
       order_index = 0,
     } = body
@@ -83,6 +84,7 @@ export async function POST(
         progress_rate,
         task_type,
         priority,
+        start_date: start_date || null,
         due_date: due_date || null,
         order_index,
       })

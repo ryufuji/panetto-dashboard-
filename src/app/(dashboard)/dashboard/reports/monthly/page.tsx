@@ -59,8 +59,7 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
 
   const approvedCount = allReports.filter((r: any) => r.status === 'approved').length
   const submittedCount = allReports.filter((r: any) => r.status === 'submitted').length
-  const rejectedCount = allReports.filter((r: any) => r.status === 'rejected').length
-  const rateBase = approvedCount + submittedCount + rejectedCount
+  const rateBase = approvedCount + submittedCount
   const approvalRate = rateBase > 0 ? Math.round((approvedCount / rateBase) * 100) : 0
 
   const reportsWithHours = allReports.filter((r: any) => r.work_hours != null && r.work_hours > 0)
@@ -78,7 +77,6 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
     name: string
     total: number
     approved: number
-    rejected: number
     totalWorkHours: number
     workHoursCount: number
   }> = {}
@@ -92,7 +90,6 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
         name: deptName,
         total: 0,
         approved: 0,
-        rejected: 0,
         totalWorkHours: 0,
         workHoursCount: 0,
       }
@@ -100,7 +97,6 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
 
     deptMap[deptId].total++
     if (report.status === 'approved') deptMap[deptId].approved++
-    if (report.status === 'rejected') deptMap[deptId].rejected++
     if (report.work_hours != null && report.work_hours > 0) {
       deptMap[deptId].totalWorkHours += report.work_hours
       deptMap[deptId].workHoursCount++
@@ -194,7 +190,6 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
                   <TableHead>部署名</TableHead>
                   <TableHead className="text-right">総提出数</TableHead>
                   <TableHead className="text-right">承認済</TableHead>
-                  <TableHead className="text-right">却下</TableHead>
                   <TableHead className="text-right">平均稼働時間</TableHead>
                 </TableRow>
               </TableHeader>
@@ -208,7 +203,6 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
                       <TableCell className="font-medium">{dept.name}</TableCell>
                       <TableCell className="text-right">{dept.total}件</TableCell>
                       <TableCell className="text-right text-green-600">{dept.approved}件</TableCell>
-                      <TableCell className="text-right text-red-600">{dept.rejected}件</TableCell>
                       <TableCell className="text-right">{deptAvgHours === '-' ? '-' : `${deptAvgHours}h`}</TableCell>
                     </TableRow>
                   )

@@ -9,50 +9,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, ClipboardCopy, Link2 } from 'lucide-react'
+import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { type Task, type TaskApproval, type PlannedTask, defaultApproval } from '@/types/report'
+import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
+import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 
 const APPROVAL_CATEGORIES = [
   { value: 'equipment_purchase', label: '備品購入' },
   { value: 'document_review', label: '書類チェック' },
   { value: 'other', label: 'その他' },
 ]
-
-interface TaskApproval {
-  enabled: boolean
-  title: string
-  description: string
-  category: string
-  custom_category: string
-  amount: string
-  approvers: string[]
-  file_url: string
-}
-
-interface Task {
-  id: string
-  title: string
-  description: string
-  estimated_hours: string
-  actual_hours: string
-  progress_rate: number
-  task_type: string
-  priority: string
-  due_date: string
-  parent_id: string | null
-  approval: TaskApproval
-}
-
-const defaultApproval = (): TaskApproval => ({
-  enabled: false,
-  title: '',
-  description: '',
-  category: 'equipment_purchase',
-  custom_category: '',
-  amount: '',
-  approvers: [],
-  file_url: '',
-})
 
 export default function NewReportPage() {
   const router = useRouter()
@@ -63,9 +30,11 @@ export default function NewReportPage() {
   const [workHours, setWorkHours] = useState('')
   const [progressRate, setProgressRate] = useState('')
   const [nextDayPlan, setNextDayPlan] = useState('')
+  const today = new Date().toISOString().split('T')[0]
   const [tasks, setTasks] = useState<Task[]>([
-    { id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '', progress_rate: 0, task_type: '', priority: 'medium', due_date: '', parent_id: null, approval: defaultApproval() }
+    { id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '', progress_rate: 0, task_type: '', priority: 'medium', start_date: today, due_date: '', parent_id: null, approval: defaultApproval() }
   ])
+  const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [thresholdRules, setThresholdRules] = useState<any[]>([])
   const [defaultApproverId, setDefaultApproverId] = useState<string | null>(null)
@@ -123,82 +92,10 @@ export default function NewReportPage() {
     return 1
   }
 
-  const carryOverTasks = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: latestReport } = await supabase
-      .from('reports')
-      .select('id, report_date, tasks:report_tasks(*)')
-      .eq('user_id', user.id)
-      .in('status', ['submitted', 'approved'])
-      .order('report_date', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (!latestReport?.tasks?.length) {
-      toast.info('引き継ぎ可能なタスクがありません')
-      return
-    }
-
-    const incompletePT = latestReport.tasks
-      .filter((t: any) => !t.parent_task_id && t.progress_rate < 100)
-      .sort((a: any, b: any) => a.order_index - b.order_index)
-
-    if (incompletePT.length === 0) {
-      toast.info('未完了のタスクはありません')
-      return
-    }
-
-    const newTasks: Task[] = []
-    for (const pt of incompletePT) {
-      const localId = crypto.randomUUID()
-      newTasks.push({
-        id: localId,
-        title: pt.title || '',
-        description: pt.description || '',
-        estimated_hours: pt.estimated_hours?.toString() || '',
-        actual_hours: '',
-        progress_rate: pt.progress_rate,
-        task_type: pt.task_type || '',
-        priority: pt.priority || 'medium',
-        due_date: pt.due_date || '',
-        parent_id: null,
-        approval: defaultApproval(),
-      })
-
-      const children = latestReport.tasks
-        .filter((t: any) => t.parent_task_id === pt.id)
-        .sort((a: any, b: any) => a.order_index - b.order_index)
-      for (const ct of children) {
-        newTasks.push({
-          id: crypto.randomUUID(),
-          title: ct.title || '',
-          description: ct.description || '',
-          estimated_hours: ct.estimated_hours?.toString() || '',
-          actual_hours: '',
-          progress_rate: ct.progress_rate,
-          task_type: ct.task_type || '',
-          priority: ct.priority || 'medium',
-          due_date: ct.due_date || '',
-          parent_id: localId,
-          approval: defaultApproval(),
-        })
-      }
-    }
-
-    setTasks(prev => {
-      const existing = prev.filter(t => t.title.trim() !== '')
-      return [...existing, ...newTasks]
-    })
-
-    toast.success(`${incompletePT.length}件のタスクを引き継ぎました（${latestReport.report_date}）`)
-  }
-
   const addTask = (parentId: string | null = null) => {
     setTasks([...tasks, {
       id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '',
-      progress_rate: 0, task_type: '', priority: 'medium', due_date: '', parent_id: parentId, approval: defaultApproval()
+      progress_rate: 0, task_type: '', priority: 'medium', start_date: today, due_date: '', parent_id: parentId, approval: defaultApproval()
     }])
   }
 
@@ -301,6 +198,7 @@ export default function NewReportPage() {
           progress_rate: pt.progress_rate,
           task_type: pt.task_type || null,
           priority: pt.priority,
+          start_date: pt.start_date || null,
           due_date: pt.due_date || null,
           order_index: i,
         }).select().single()
@@ -349,10 +247,22 @@ export default function NewReportPage() {
             progress_rate: ct.progress_rate,
             task_type: ct.task_type || null,
             priority: ct.priority,
+            start_date: ct.start_date || null,
             due_date: ct.due_date || null,
             order_index: j,
           })
         }
+      }
+
+      // Insert planned tasks
+      const validPlannedTasks = plannedTasks.filter(pt => pt.title.trim())
+      for (let i = 0; i < validPlannedTasks.length; i++) {
+        await supabase.from('report_planned_tasks').insert({
+          report_id: report.id,
+          title: validPlannedTasks[i].title.trim(),
+          estimated_hours: validPlannedTasks[i].estimated_hours ? parseFloat(validPlannedTasks[i].estimated_hours) : null,
+          order_index: i,
+        })
       }
 
       toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
@@ -403,9 +313,7 @@ export default function NewReportPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>タスク一覧</CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={carryOverTasks}>
-              <ClipboardCopy className="mr-1 h-4 w-4" />前日タスク引き継ぎ
-            </Button>
+            <TaskCarryOverMenu tasks={tasks} setTasks={setTasks} />
             <Button variant="outline" size="sm" onClick={() => addTask(null)}>
               <Plus className="mr-1 h-4 w-4" />親タスク追加
             </Button>
@@ -426,7 +334,7 @@ export default function NewReportPage() {
                 </div>
                 <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-6 gap-2">
                   <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" value={task.progress_rate} onChange={e => updateTask(task.id, 'progress_rate', parseInt(e.target.value) || 0)} /></div>
@@ -440,6 +348,7 @@ export default function NewReportPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div><Label className="text-xs">開始日</Label><Input type="date" value={task.start_date} onChange={e => updateTask(task.id, 'start_date', e.target.value)} /></div>
                   <div><Label className="text-xs">期限</Label><Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} /></div>
                 </div>
 
@@ -451,10 +360,11 @@ export default function NewReportPage() {
                       <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => removeTask(child.id)}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                     <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-5 gap-2">
                       <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
                       <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>
                       <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" value={child.progress_rate} onChange={e => updateTask(child.id, 'progress_rate', parseInt(e.target.value) || 0)} /></div>
+                      <div><Label className="text-xs">開始日</Label><Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} /></div>
                       <div><Label className="text-xs">期限</Label><Input type="date" value={child.due_date} onChange={e => updateTask(child.id, 'due_date', e.target.value)} /></div>
                     </div>
                   </div>
@@ -598,8 +508,47 @@ export default function NewReportPage() {
 
       <Card>
         <CardHeader><CardTitle>翌日の予定</CardTitle></CardHeader>
-        <CardContent>
-          <Textarea placeholder="翌日の予定を入力..." value={nextDayPlan} onChange={e => setNextDayPlan(e.target.value)} rows={4} />
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            {plannedTasks.map((pt, i) => (
+              <div key={pt.id} className="flex items-center gap-2">
+                <Input
+                  placeholder="タスク名"
+                  value={pt.title}
+                  onChange={e => setPlannedTasks(prev => prev.map(t => t.id === pt.id ? { ...t, title: e.target.value } : t))}
+                  className="flex-1"
+                />
+                <div className="flex items-center gap-1 shrink-0">
+                  <Input
+                    type="number"
+                    step="0.5"
+                    placeholder="0"
+                    value={pt.estimated_hours}
+                    onChange={e => setPlannedTasks(prev => prev.map(t => t.id === pt.id ? { ...t, estimated_hours: e.target.value } : t))}
+                    className="w-20"
+                  />
+                  <span className="text-xs text-muted-foreground">h</span>
+                </div>
+                <Button variant="ghost" size="sm" className="text-red-500 shrink-0 h-8 w-8 p-0" onClick={() => setPlannedTasks(prev => prev.filter(t => t.id !== pt.id))}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPlannedTasks(prev => [...prev, { id: crypto.randomUUID(), title: '', estimated_hours: '' }])}
+              >
+                <Plus className="mr-1 h-4 w-4" />タスク追加
+              </Button>
+              <PlannedTaskCarryOverMenu plannedTasks={plannedTasks} setPlannedTasks={setPlannedTasks} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">メモ（任意）</Label>
+            <Textarea placeholder="翌日の予定を入力..." value={nextDayPlan} onChange={e => setNextDayPlan(e.target.value)} rows={3} />
+          </div>
         </CardContent>
       </Card>
 
