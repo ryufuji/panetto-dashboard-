@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const PANETTO_ORG_ID = '00000000-0000-0000-0000-000000000001'
+const PANETTO_ORG_ID = 'a0000000-0000-0000-0000-000000000001'
 
 function toJSTDateString(isoString: string): string {
   const d = new Date(isoString)

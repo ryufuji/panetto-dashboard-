@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Users, Pencil, Loader2, Plus, Upload, Download } from 'lucide-react'
+import { Users, Pencil, Loader2, Plus, Upload, Download, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 
 const roleLabels: Record<string, string> = { admin: '管理者', manager: '部署長', employee: '一般' }
@@ -40,6 +40,9 @@ export default function EmployeesPage() {
   const [showCsvImport, setShowCsvImport] = useState(false)
   const [csvResults, setCsvResults] = useState<{ email: string; success: boolean; error?: string }[] | null>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
+  const [showPanetBulk, setShowPanetBulk] = useState(false)
+  const [panetBulkResults, setPanetBulkResults] = useState<any[] | null>(null)
+  const [panetBulkLoading, setPanetBulkLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -231,6 +234,30 @@ export default function EmployeesPage() {
     if (csvInputRef.current) csvInputRef.current.value = ''
   }
 
+  const handlePanetBulk = async () => {
+    setPanetBulkLoading(true)
+    setPanetBulkResults(null)
+    setShowPanetBulk(true)
+
+    try {
+      const res = await fetch('/api/organization/users/panet-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const json = await res.json()
+
+      if (res.ok) {
+        setPanetBulkResults(json.results)
+        toast.success(`PANET: ${json.succeeded}件成功、${json.failed}件スキップ`)
+      } else {
+        toast.error(json.error || 'PANET一括発行に失敗しました')
+      }
+    } catch {
+      toast.error('PANET API接続に失敗しました')
+    }
+    setPanetBulkLoading(false)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -248,6 +275,9 @@ export default function EmployeesPage() {
         <h1 className="text-3xl font-bold tracking-tight">社員管理</h1>
         {isAdmin && (
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handlePanetBulk}>
+              <Globe className="mr-2 h-4 w-4" />PANET一括発行
+            </Button>
             <Button variant="outline" onClick={downloadCsvTemplate}>
               <Download className="mr-2 h-4 w-4" />CSV雛形
             </Button>
@@ -430,6 +460,41 @@ export default function EmployeesPage() {
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               作成
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PANET Bulk Provisioning Dialog */}
+      <Dialog open={showPanetBulk} onOpenChange={() => { setShowPanetBulk(false); setPanetBulkResults(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>PANET一括発行</DialogTitle>
+            <DialogDescription>
+              {panetBulkResults
+                ? `${panetBulkResults.filter((r: any) => r.success).length}件作成 / ${panetBulkResults.filter((r: any) => !r.success).length}件スキップ（既存）`
+                : '全社員のPANETアカウントを発行しています...'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          {panetBulkLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : panetBulkResults ? (
+            <div className="max-h-[300px] overflow-y-auto space-y-1">
+              {panetBulkResults.map((r: any, i: number) => (
+                <div key={i} className={`flex items-center justify-between rounded px-3 py-2 text-sm ${r.success ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                  <span className="truncate">{r.email}</span>
+                  {r.success
+                    ? <Badge variant="default" className="shrink-0">作成</Badge>
+                    : <Badge variant="secondary" className="shrink-0">{r.error || '既存'}</Badge>
+                  }
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button onClick={() => { setShowPanetBulk(false); setPanetBulkResults(null) }}>閉じる</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

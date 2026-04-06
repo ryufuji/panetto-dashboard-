@@ -29,45 +29,57 @@ export default async function DashboardPage() {
     { label: '店舗タスク', value: storeTasksRes.count || 0, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/stores' },
   ]
 
-  // Recent reports
-  const { data: recentReports } = await supabase
-    .from('reports')
-    .select('*, user:users(name, department:departments!users_department_id_fkey(name))')
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  // Pending report confirmations
-  const { data: pendingApprovals } = await supabase
-    .from('approvals')
-    .select('*, report:reports(*, user:users(name)), requester:users!approvals_requester_id_fkey(name)')
-    .eq('status', 'pending')
-    .order('requested_at', { ascending: false })
-    .limit(5)
-
-  // Pending approval requests (申請管理)
-  const { data: pendingRequests } = await supabase
-    .from('approval_requests')
-    .select('*, requester:users!approval_requests_requester_id_fkey(name)')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  // Recent store tasks
-  const { data: recentStoreTasks } = await supabase
-    .from('store_tasks')
-    .select('*')
-    .neq('status', 'done')
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  // Pending deadline extension requests for current user
-  const { data: pendingExtensions } = authUser ? await supabase
-    .from('deadline_extension_requests')
-    .select('*, requester:users!deadline_extension_requests_requester_id_fkey(name)')
-    .eq('approver_id', authUser.id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(5) : { data: null }
+  // Run all remaining queries in parallel
+  const [
+    { data: recentReports },
+    { data: pendingApprovals },
+    { data: pendingRequests },
+    { data: recentStoreTasks },
+    { data: pendingExtensions },
+    { data: departments },
+    { data: deptUsers },
+    { data: deptReports },
+  ] = await Promise.all([
+    supabase
+      .from('reports')
+      .select('id, report_date, status, user:users(name, department:departments!users_department_id_fkey(name))')
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('approvals')
+      .select('id, status, report:reports(report_date, user:users(name)), requester:users!approvals_requester_id_fkey(name)')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('approval_requests')
+      .select('id, title, created_at, requester:users!approval_requests_requester_id_fkey(name)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('store_tasks')
+      .select('id, title, store_name, status, start_date, due_date')
+      .neq('status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    authUser
+      ? supabase
+          .from('deadline_extension_requests')
+          .select('id, report_id, task_title, original_due_date, proposed_due_date, created_at, requester:users!deadline_extension_requests_requester_id_fkey(name)')
+          .eq('approver_id', authUser.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: null }),
+    supabase
+      .from('departments')
+      .select('id, name, code')
+      .eq('is_active', true)
+      .order('order_index'),
+    supabase.from('users').select('department_id').eq('is_active', true),
+    supabase.from('reports').select('department_id, status').eq('report_date', today),
+  ])
 
   const storeTaskStatusLabels: Record<string, { label: string; color: string }> = {
     todo: { label: '未着手', color: 'bg-gray-50 text-gray-700 border-gray-200' },
@@ -75,29 +87,23 @@ export default async function DashboardPage() {
     blocked: { label: 'ブロック', color: 'bg-red-50 text-red-700 border-red-200' },
   }
 
-  // Department stats: member count, today's report submissions, confirmations
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, code')
-    .eq('is_active', true)
-    .order('order_index')
-
-  const { data: deptUsers } = await supabase
-    .from('users')
-    .select('department_id')
-    .eq('is_active', true)
-
-  const { data: deptReports } = await supabase
-    .from('reports')
-    .select('department_id, status')
-    .eq('report_date', today)
-
-  // Build per-department stats
+  // Build per-department stats using O(n) Map lookups instead of O(n*m) filter
+  const memberMap = new Map<string, number>()
+  for (const u of (deptUsers || []) as any[]) {
+    if (!u.department_id) continue
+    memberMap.set(u.department_id, (memberMap.get(u.department_id) || 0) + 1)
+  }
+  const submittedMap = new Map<string, number>()
+  const approvedMap = new Map<string, number>()
+  for (const r of (deptReports || []) as any[]) {
+    if (!r.department_id) continue
+    if (r.status !== 'draft') submittedMap.set(r.department_id, (submittedMap.get(r.department_id) || 0) + 1)
+    if (r.status === 'approved') approvedMap.set(r.department_id, (approvedMap.get(r.department_id) || 0) + 1)
+  }
   const deptStats = (departments || []).map((dept: any) => {
-    const memberCount = (deptUsers || []).filter((u: any) => u.department_id === dept.id).length
-    const todayReports = (deptReports || []).filter((r: any) => r.department_id === dept.id)
-    const submittedCount = todayReports.filter((r: any) => r.status !== 'draft').length
-    const approvedCount = todayReports.filter((r: any) => r.status === 'approved').length
+    const memberCount = memberMap.get(dept.id) || 0
+    const submittedCount = submittedMap.get(dept.id) || 0
+    const approvedCount = approvedMap.get(dept.id) || 0
     const rate = memberCount > 0 ? Math.round((submittedCount / memberCount) * 100) : 0
     return { ...dept, memberCount, submittedCount, approvedCount, rate }
   })
@@ -106,7 +112,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
-        <p className="text-muted-foreground">パネット業務ダッシュボード概要</p>
+        <p className="text-muted-foreground">業務日報ダッシュボード概要</p>
       </div>
 
       {/* KPI Cards */}

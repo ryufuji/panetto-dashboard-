@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createPanetUser } from '@/lib/panet'
 
 export async function GET(request: NextRequest) {
   try {
@@ -139,10 +140,21 @@ async function getAdminContext(supabase: any) {
   return { adminClient, organization_id: currentUser.organization_id }
 }
 
+function computeJoinYear(hireDate: string | null | undefined): number | undefined {
+  if (!hireDate) return undefined
+  const hd = new Date(hireDate)
+  if (isNaN(hd.getTime())) return undefined
+  const month = hd.getMonth() + 1
+  const year = hd.getFullYear()
+  // 日本の会計年度: 4月始まり → 1-3月入社は前年度
+  return month >= 4 ? year : year - 1
+}
+
 async function createSingleUser(
   adminClient: any,
   organization_id: string,
-  { email, password, name, employee_number, position, department_id, office_id, role }: any
+  { email, password, name, employee_number, position, department_id, office_id, role, hire_date }: any,
+  departmentName?: string
 ) {
   const validRoles = ['admin', 'manager', 'employee']
   const userRole = validRoles.includes(role) ? role : 'employee'
@@ -169,6 +181,7 @@ async function createSingleUser(
       department_id: (department_id && department_id !== 'none') ? department_id : null,
       office_id: (office_id && office_id !== 'none') ? office_id : null,
       role: userRole,
+      hire_date: hire_date || null,
     })
     .select('*, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)')
     .single()
@@ -176,6 +189,21 @@ async function createSingleUser(
   if (error) {
     await adminClient.auth.admin.deleteUser(authData.user.id)
     return { data: null, error: error.message }
+  }
+
+  // Also create PANET account (fire-and-forget — failure does not block panetto-dashboard)
+  try {
+    const panetResult = await createPanetUser({
+      email,
+      display_name: name,
+      department: departmentName || data?.department?.name || undefined,
+      join_year: computeJoinYear(hire_date),
+    })
+    if (panetResult) {
+      console.log(`[PANET] Account ${panetResult.created ? 'created' : 'already existed'} for ${email}`)
+    }
+  } catch (err) {
+    console.error(`[PANET] Failed to create account for ${email}:`, err)
   }
 
   return { data, error: null }

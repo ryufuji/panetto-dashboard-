@@ -7,7 +7,7 @@ import { Providers } from './providers'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'パネット業務ダッシュボード',
+  title: '業務日報ダッシュボード',
   description: 'パネット株式会社 業務管理プラットフォーム',
 }
 

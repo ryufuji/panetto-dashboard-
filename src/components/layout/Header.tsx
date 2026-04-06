@@ -34,7 +34,7 @@ export function Header({ user, onMenuToggle }: HeaderProps) {
         <button onClick={onMenuToggle} className="rounded-lg p-2 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800">
           <Menu className="h-5 w-5" />
         </button>
-        <h2 className="text-lg font-semibold">パネット業務ダッシュボード</h2>
+        <h2 className="text-lg font-semibold">業務日報ダッシュボード</h2>
       </div>
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" className="relative">

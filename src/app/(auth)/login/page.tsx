@@ -40,7 +40,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white">
             <Building2 className="h-8 w-8" />
           </div>
-          <CardTitle className="text-2xl">パネット業務ダッシュボード</CardTitle>
+          <CardTitle className="text-2xl">業務日報ダッシュボード</CardTitle>
           <CardDescription>メールアドレスとパスワードでログイン</CardDescription>
         </CardHeader>
         <CardContent>

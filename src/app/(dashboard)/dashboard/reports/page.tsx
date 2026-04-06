@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, FileText, Eye } from 'lucide-react'
 import Link from 'next/link'
+import { SyncTasukaruButton } from '@/components/reports/sync-tasukaru-button'
 
 const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   draft: { label: '下書き', variant: 'outline' },
@@ -34,28 +35,33 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const limit = 20
   const offset = (page - 1) * limit
 
-  // Fetch internal reports
-  let query = supabase
+  // Fetch only enough rows to render the current page after merging.
+  // We over-fetch by `offset+limit` from each source so the merged+sorted slice is correct.
+  const fetchCap = offset + limit
+
+  let reportsQuery = supabase
     .from('reports')
-    .select('*, user:users(name, department:departments!users_department_id_fkey(name))', { count: 'exact' })
+    .select('id, report_date, title, status, progress_rate, work_hours, user:users(name, department:departments!users_department_id_fkey(name))', { count: 'exact' })
     .order('report_date', { ascending: false })
+    .limit(fetchCap)
 
   if (params.status) {
-    query = query.eq('status', params.status)
+    reportsQuery = reportsQuery.eq('status', params.status)
   }
 
-  const { data: reports, count: reportsCount } = await query
+  const storeReportsPromise = params.status
+    ? Promise.resolve({ data: [] as any[], count: 0 })
+    : supabase
+        .from('store_daily_reports')
+        .select('id, report_date, external_user_name, store_name, task_count, completed_count', { count: 'exact' })
+        .order('report_date', { ascending: false })
+        .limit(fetchCap)
 
-  // Fetch store daily reports (skip if filtering by internal status)
-  let storeReports: any[] = []
-  if (!params.status) {
-    const { data } = await supabase
-      .from('store_daily_reports')
-      .select('*')
-      .order('report_date', { ascending: false })
-
-    storeReports = data || []
-  }
+  const [reportsRes, storeReportsRes] = await Promise.all([reportsQuery, storeReportsPromise])
+  const reports = reportsRes.data
+  const reportsCount = reportsRes.count || 0
+  const storeReports = storeReportsRes.data || []
+  const storeReportsCount = storeReportsRes.count || 0
 
   // Fetch view counts for internal reports
   const reportIds = (reports || []).map((r: any) => r.id)
@@ -113,8 +119,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // Sort by report_date descending
   merged.sort((a, b) => b.report_date.localeCompare(a.report_date))
 
-  // Paginate the merged results
-  const totalCount = merged.length
+  // Total count comes from DB count() (not the over-fetched merged list)
+  const totalCount = reportsCount + storeReportsCount
   const paginated = merged.slice(offset, offset + limit)
   const totalPages = Math.ceil(totalCount / limit)
 
@@ -125,9 +131,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <h1 className="text-3xl font-bold tracking-tight">日報一覧</h1>
           <p className="text-muted-foreground">全{totalCount}件</p>
         </div>
-        <Link href="/dashboard/reports/new">
-          <Button><Plus className="mr-2 h-4 w-4" />日報作成</Button>
-        </Link>
+        <div className="flex gap-2">
+          <SyncTasukaruButton />
+          <Link href="/dashboard/reports/new">
+            <Button><Plus className="mr-2 h-4 w-4" />日報作成</Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
