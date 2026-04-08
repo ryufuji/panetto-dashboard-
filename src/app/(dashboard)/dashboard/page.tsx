@@ -3,30 +3,47 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, Eye } from 'lucide-react'
 import Link from 'next/link'
+import { unstable_cache } from 'next/cache'
+
+// KPI counts are shared across all users — cache for 60s to absorb the 18-20時 spike.
+const getDashboardKpis = unstable_cache(
+  async (today: string) => {
+    const supabase = await createClient()
+    const [reports, pending, users, stores, storeTasks, pendingRequests] = await Promise.all([
+      supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
+      supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
+      supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    ])
+    return {
+      reports: reports.count || 0,
+      pending: pending.count || 0,
+      users: users.count || 0,
+      stores: stores.count || 0,
+      storeTasks: storeTasks.count || 0,
+      pendingRequests: pendingRequests.count || 0,
+    }
+  },
+  ['dashboard-kpis'],
+  { revalidate: 60, tags: ['dashboard-kpis'] }
+)
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user: authUser } } = await supabase.auth.getUser()
 
-  // Get counts
   const today = new Date().toISOString().split('T')[0]
-
-  const [reportsRes, pendingRes, usersRes, storesRes, storeTasksRes, pendingRequestsRes] = await Promise.all([
-    supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
-    supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
-    supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-  ])
+  const kpis = await getDashboardKpis(today)
 
   const stats = [
-    { label: '本日の日報', value: reportsRes.count || 0, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
-    { label: '未確認日報', value: pendingRes.count || 0, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
-    { label: '承認待ち申請', value: pendingRequestsRes.count || 0, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
-    { label: '在籍人数', value: usersRes.count || 0, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
-    { label: '稼働店舗', value: storesRes.count || 0, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
-    { label: '店舗タスク', value: storeTasksRes.count || 0, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/stores' },
+    { label: '本日の日報', value: kpis.reports, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
+    { label: '未確認日報', value: kpis.pending, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
+    { label: '承認待ち申請', value: kpis.pendingRequests, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
+    { label: '在籍人数', value: kpis.users, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
+    { label: '稼働店舗', value: kpis.stores, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
+    { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/stores' },
   ]
 
   // Run all remaining queries in parallel
@@ -241,7 +258,7 @@ export default async function DashboardPage() {
                 <Store className="h-5 w-5 text-teal-500" />
                 店舗タスク
               </CardTitle>
-              <CardDescription>未完了 {storeTasksRes.count || 0}件</CardDescription>
+              <CardDescription>未完了 {kpis.storeTasks}件</CardDescription>
             </div>
             <Link href="/dashboard/stores" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>

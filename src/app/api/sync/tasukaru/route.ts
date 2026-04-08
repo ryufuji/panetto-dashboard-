@@ -127,8 +127,15 @@ export async function POST() {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Step 1: Login to タス軽くん
-    const sessionCookie = await loginToTasukaru(apiUrl, apiEmail, apiPassword)
+    // Acquire advisory lock so concurrent cron + manual button clicks don't race
+    const { data: lockAcquired } = await supabase.rpc('try_sync_lock', { key: 'tasukaru_sync' })
+    if (lockAcquired === false) {
+      return NextResponse.json({ success: true, skipped: 'another sync in progress' })
+    }
+
+    try {
+      // Step 1: Login to タス軽くん
+      const sessionCookie = await loginToTasukaru(apiUrl, apiEmail, apiPassword)
 
     // Step 2: Fetch all tasks
     const tasks = await fetchAllTasks(apiUrl, sessionCookie)
@@ -246,13 +253,16 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      synced: tasks.length,
-      created,
-      updated,
-      deleted,
-    })
+      return NextResponse.json({
+        success: true,
+        synced: tasks.length,
+        created,
+        updated,
+        deleted,
+      })
+    } finally {
+      await supabase.rpc('release_sync_lock', { key: 'tasukaru_sync' })
+    }
   } catch (err) {
     console.error('[SYNC] Error:', err)
     return NextResponse.json(
