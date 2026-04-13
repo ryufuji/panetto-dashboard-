@@ -18,7 +18,7 @@ import {
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
-type SortKey = 'name' | 'completionRate' | 'estimationAccuracy' | 'productivity' | 'workHours' | 'completedCount' | 'deadlineAdherence' | 'hourlyRate' | 'taskCost' | 'highPriorityRatio'
+type SortKey = 'name' | 'completionRate' | 'estimationAccuracy' | 'productivity' | 'workHours' | 'completedCount' | 'deadlineAdherence' | 'hourlyRate' | 'taskCost' | 'highPriorityRatio' | 'storeCompletionRate' | 'combinedCompletionRate'
 
 interface PerformanceUser {
   user_id: string
@@ -37,6 +37,15 @@ interface PerformanceUser {
     taskCost: number | null
     highPriorityRatio: number | null
     workHours: number
+    // Store (tasukaru) metrics
+    storeTotalTasks: number | null
+    storeCompletedTasks: number | null
+    storeCompletionRate: number | null
+    storeDeadlineAdherence: number | null
+    // Combined
+    combinedTotalTasks: number
+    combinedCompletedCount: number
+    combinedCompletionRate: number
   }
 }
 
@@ -47,6 +56,12 @@ interface TrendData {
   workHours: number
   totalTasks: number
   completedCount: number
+  storeTotalTasks: number | null
+  storeCompletedTasks: number | null
+  storeCompletionRate: number | null
+  combinedTotalTasks: number
+  combinedCompletedCount: number
+  combinedCompletionRate: number
 }
 
 export default function PerformancePage() {
@@ -152,6 +167,8 @@ export default function PerformancePage() {
       case 'hourlyRate': av = m(a).hourlyRate; bv = m(b).hourlyRate; break
       case 'taskCost': av = m(a).taskCost; bv = m(b).taskCost; break
       case 'highPriorityRatio': av = m(a).highPriorityRatio; bv = m(b).highPriorityRatio; break
+      case 'storeCompletionRate': av = m(a).storeCompletionRate; bv = m(b).storeCompletionRate; break
+      case 'combinedCompletionRate': av = m(a).combinedCompletionRate; bv = m(b).combinedCompletionRate; break
     }
     if (av === null && bv === null) return 0
     if (av === null) return 1
@@ -294,6 +311,8 @@ export default function PerformancePage() {
                       <SortHeader label="期限遵守" sortKeyName="deadlineAdherence" />
                       <SortHeader label="稼働h" sortKeyName="workHours" />
                       <SortHeader label="高優先度" sortKeyName="highPriorityRatio" />
+                      <SortHeader label="タス軽完了率" sortKeyName="storeCompletionRate" />
+                      <SortHeader label="統合完了率" sortKeyName="combinedCompletionRate" />
                       {isAdmin && <SortHeader label="時間単価" sortKeyName="hourlyRate" />}
                       {isAdmin && <SortHeader label="タスク単価" sortKeyName="taskCost" />}
                     </TableRow>
@@ -324,13 +343,23 @@ export default function PerformancePage() {
                         <TableCell className="text-sm">{row.metrics.deadlineAdherence !== null ? `${row.metrics.deadlineAdherence}%` : '-'}</TableCell>
                         <TableCell className="text-sm">{row.metrics.workHours}h</TableCell>
                         <TableCell className="text-sm">{row.metrics.highPriorityRatio !== null ? `${row.metrics.highPriorityRatio}%` : '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          {row.metrics.storeTotalTasks !== null ? (
+                            <span>{row.metrics.storeCompletedTasks}/{row.metrics.storeTotalTasks} ({row.metrics.storeCompletionRate ?? 0}%)</span>
+                          ) : <span className="text-muted-foreground">未連携</span>}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={row.metrics.combinedCompletionRate >= 80 ? 'default' : row.metrics.combinedCompletionRate >= 50 ? 'secondary' : 'outline'}>
+                            {row.metrics.combinedCompletedCount}/{row.metrics.combinedTotalTasks} ({row.metrics.combinedCompletionRate}%)
+                          </Badge>
+                        </TableCell>
                         {isAdmin && <TableCell className="text-sm">{row.metrics.hourlyRate !== null ? `${row.metrics.hourlyRate.toLocaleString()}円` : '-'}</TableCell>}
                         {isAdmin && <TableCell className="text-sm">{row.metrics.taskCost !== null ? `${row.metrics.taskCost.toLocaleString()}円` : '-'}</TableCell>}
                       </TableRow>
                     ))}
                     {sorted.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={isAdmin ? 12 : 10} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={isAdmin ? 14 : 12} className="text-center py-8 text-muted-foreground">
                           データがありません
                         </TableCell>
                       </TableRow>
@@ -379,8 +408,9 @@ export default function PerformancePage() {
                             <YAxis />
                             <Tooltip />
                             <Legend />
-                            <Bar dataKey="completionRate" name="完了率(%)" fill="#2563eb" />
-                            <Bar dataKey="completedCount" name="完了数" fill="#16a34a" />
+                            <Bar dataKey="completionRate" name="日報完了率(%)" fill="#2563eb" />
+                            <Bar dataKey="storeCompletionRate" name="タス軽完了率(%)" fill="#8b5cf6" />
+                            <Bar dataKey="combinedCompletionRate" name="統合完了率(%)" fill="#10b981" />
                             <Bar dataKey="workHours" name="稼働h" fill="#f59e0b" />
                           </BarChart>
                         </ResponsiveContainer>

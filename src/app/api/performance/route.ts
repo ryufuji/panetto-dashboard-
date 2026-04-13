@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     // Fetch users in scope
     let usersQuery = supabase
       .from('users')
-      .select('id, name, department_id, position, monthly_salary, department:departments!users_department_id_fkey(id, name)')
+      .select('id, name, department_id, position, monthly_salary, external_user_id, department:departments!users_department_id_fkey(id, name)')
       .eq('organization_id', currentUser.organization_id)
       .eq('is_active', true)
 
@@ -109,6 +109,54 @@ export async function GET(request: NextRequest) {
       userWorkHoursMap.set(r.user_id, prev + (r.work_hours || 0))
     }
 
+    // Fetch store daily report tasks (tasukaru) for the same date range
+    // Join through store_daily_reports to get date range + external_user_id
+    const { data: storeReports } = await supabase
+      .from('store_daily_reports')
+      .select('id, external_user_id, report_date')
+      .eq('organization_id', currentUser.organization_id)
+      .gte('report_date', dateFrom)
+      .lte('report_date', dateTo)
+
+    // Build external_user_id -> user.id mapping
+    const externalToUserMap = new Map<string, string>()
+    for (const u of users) {
+      if (u.external_user_id) {
+        externalToUserMap.set(u.external_user_id, u.id)
+      }
+    }
+
+    // Fetch store tasks for those reports
+    const storeReportIds = (storeReports || []).map(r => r.id)
+    let storeTasks: any[] = []
+    if (storeReportIds.length > 0) {
+      const batchSize = 100
+      for (let i = 0; i < storeReportIds.length; i += batchSize) {
+        const batch = storeReportIds.slice(i, i + batchSize)
+        const { data: batchTasks } = await supabase
+          .from('store_daily_report_tasks')
+          .select('id, report_id, status, due_date, synced_at')
+          .in('report_id', batch)
+        if (batchTasks) storeTasks = storeTasks.concat(batchTasks)
+      }
+    }
+
+    // Map store report -> external_user_id -> user_id
+    const storeReportUserMap = new Map<string, string>()
+    for (const sr of storeReports || []) {
+      const userId = externalToUserMap.get(sr.external_user_id)
+      if (userId) storeReportUserMap.set(sr.id, userId)
+    }
+
+    // Group store tasks by user
+    const userStoreTasksMap = new Map<string, any[]>()
+    for (const st of storeTasks) {
+      const userId = storeReportUserMap.get(st.report_id)
+      if (!userId) continue
+      if (!userStoreTasksMap.has(userId)) userStoreTasksMap.set(userId, [])
+      userStoreTasksMap.get(userId)!.push(st)
+    }
+
     // Calculate metrics per user
     const results = users.map(u => {
       const userTasks = userTasksMap.get(u.id) || []
@@ -165,6 +213,32 @@ export async function GET(request: NextRequest) {
         ? Math.round(highPriorityHours / totalActualHours * 100)
         : null
 
+      // Store (tasukaru) metrics
+      const userStoreTasks = userStoreTasksMap.get(u.id) || []
+      const storeTotalTasks = userStoreTasks.length
+      const storeCompletedTasks = userStoreTasks.filter(t => t.status === 'done').length
+      const storeCompletionRate = storeTotalTasks > 0
+        ? Math.round(storeCompletedTasks / storeTotalTasks * 100) : null
+
+      // Deadline adherence: done tasks with due_date where synced_at <= due_date
+      const storeTasksWithDeadline = userStoreTasks.filter(t => t.status === 'done' && t.due_date)
+      let storeDeadlineAdherence: number | null = null
+      if (storeTasksWithDeadline.length > 0) {
+        const onTime = storeTasksWithDeadline.filter(t => {
+          const syncedDate = t.synced_at ? t.synced_at.split('T')[0] : null
+          return syncedDate && syncedDate <= t.due_date
+        })
+        storeDeadlineAdherence = Math.round(onTime.length / storeTasksWithDeadline.length * 100)
+      }
+
+      // Combined metrics
+      const combinedTotalTasks = totalTasks + storeTotalTasks
+      const combinedCompletedCount = completedCount + storeCompletedTasks
+      const combinedCompletionRate = combinedTotalTasks > 0
+        ? Math.round(combinedCompletedCount / combinedTotalTasks * 100) : 0
+
+      const hasStoreMapping = !!u.external_user_id
+
       return {
         user_id: u.id,
         name: u.name,
@@ -182,6 +256,15 @@ export async function GET(request: NextRequest) {
           taskCost,
           highPriorityRatio,
           workHours: Math.round(workHours * 10) / 10,
+          // Store (tasukaru) metrics
+          storeTotalTasks: hasStoreMapping ? storeTotalTasks : null,
+          storeCompletedTasks: hasStoreMapping ? storeCompletedTasks : null,
+          storeCompletionRate: hasStoreMapping ? storeCompletionRate : null,
+          storeDeadlineAdherence: hasStoreMapping ? storeDeadlineAdherence : null,
+          // Combined
+          combinedTotalTasks,
+          combinedCompletedCount,
+          combinedCompletionRate,
         },
       }
     })
@@ -189,19 +272,21 @@ export async function GET(request: NextRequest) {
     // Department summary (admin only)
     let departmentSummary: any[] = []
     if (currentUser.role === 'admin') {
-      const deptMap = new Map<string, { name: string; members: number; metrics: number[]; totalTasks: number; totalHours: number }>()
+      const deptMap = new Map<string, { name: string; members: number; metrics: number[]; totalTasks: number; totalHours: number; combinedTotalTasks: number; combinedCompletedCount: number }>()
 
       for (const r of results) {
         const deptId = (r.department as any)?.id || 'none'
         const deptName = (r.department as any)?.name || '未所属'
         if (!deptMap.has(deptId)) {
-          deptMap.set(deptId, { name: deptName, members: 0, metrics: [], totalTasks: 0, totalHours: 0 })
+          deptMap.set(deptId, { name: deptName, members: 0, metrics: [], totalTasks: 0, totalHours: 0, combinedTotalTasks: 0, combinedCompletedCount: 0 })
         }
         const d = deptMap.get(deptId)!
         d.members++
         d.metrics.push(r.metrics.completionRate)
         d.totalTasks += r.metrics.totalTasks
         d.totalHours += r.metrics.workHours
+        d.combinedTotalTasks += r.metrics.combinedTotalTasks
+        d.combinedCompletedCount += r.metrics.combinedCompletedCount
       }
 
       departmentSummary = Array.from(deptMap.entries()).map(([id, d]) => {
@@ -220,6 +305,10 @@ export async function GET(request: NextRequest) {
           avgEstimationAccuracy: avgEstimation,
           totalTasks: d.totalTasks,
           totalHours: Math.round(d.totalHours * 10) / 10,
+          combinedTotalTasks: d.combinedTotalTasks,
+          combinedCompletedCount: d.combinedCompletedCount,
+          combinedCompletionRate: d.combinedTotalTasks > 0
+            ? Math.round(d.combinedCompletedCount / d.combinedTotalTasks * 100) : 0,
         }
       })
     }

@@ -26,7 +26,7 @@ export async function GET(
     // Check target user exists in same org
     const { data: targetUser } = await supabase
       .from('users')
-      .select('id, name, department_id, organization_id')
+      .select('id, name, department_id, organization_id, external_user_id')
       .eq('id', userId)
       .eq('organization_id', currentUser.organization_id)
       .single()
@@ -89,6 +89,44 @@ export async function GET(
         ? Math.round(estimationPairs.reduce((sum, t) => sum + (t.actual_hours / t.estimated_hours), 0) / estimationPairs.length * 100)
         : null
 
+      // Store (tasukaru) tasks for this month
+      let storeTotalTasks: number | null = null
+      let storeCompletedTasks: number | null = null
+      let storeCompletionRate: number | null = null
+
+      if (targetUser.external_user_id) {
+        const { data: storeReports } = await supabase
+          .from('store_daily_reports')
+          .select('id')
+          .eq('external_user_id', targetUser.external_user_id)
+          .eq('organization_id', currentUser.organization_id)
+          .gte('report_date', m.dateFrom)
+          .lte('report_date', m.dateTo)
+
+        const srIds = (storeReports || []).map(r => r.id)
+        if (srIds.length > 0) {
+          const { data: stData } = await supabase
+            .from('store_daily_report_tasks')
+            .select('status')
+            .in('report_id', srIds)
+
+          const st = stData || []
+          storeTotalTasks = st.length
+          storeCompletedTasks = st.filter(t => t.status === 'done').length
+          storeCompletionRate = storeTotalTasks > 0
+            ? Math.round(storeCompletedTasks / storeTotalTasks * 100) : 0
+        } else {
+          storeTotalTasks = 0
+          storeCompletedTasks = 0
+          storeCompletionRate = null
+        }
+      }
+
+      const combinedTotalTasks = totalTasks + (storeTotalTasks || 0)
+      const combinedCompletedCount = completedCount + (storeCompletedTasks || 0)
+      const combinedCompletionRate = combinedTotalTasks > 0
+        ? Math.round(combinedCompletedCount / combinedTotalTasks * 100) : 0
+
       trends.push({
         label: m.label,
         year: m.year,
@@ -98,6 +136,12 @@ export async function GET(
         workHours: Math.round(workHours * 10) / 10,
         totalTasks,
         completedCount,
+        storeTotalTasks,
+        storeCompletedTasks,
+        storeCompletionRate,
+        combinedTotalTasks,
+        combinedCompletedCount,
+        combinedCompletionRate,
       })
     }
 
