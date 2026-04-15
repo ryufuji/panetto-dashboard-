@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendLineWorksMessage, formatReportSubmittedMessage } from '@/lib/lineworks'
 
 export async function GET(
   request: NextRequest,
@@ -90,6 +91,49 @@ export async function PUT(
     }
 
     // Note: approval creation is handled by the DB trigger (trg_report_on_submit)
+
+    // LINE Works 通知: draft/未提出 → submitted への遷移時のみ発火
+    const wasNotSubmitted = existing.status !== 'submitted'
+    const isNowSubmitted = data.status === 'submitted'
+    if (wasNotSubmitted && isNowSubmitted) {
+      try {
+        // 通知に必要なリレーションを1クエリでまとめて取得
+        const { data: full } = await supabase
+          .from('reports')
+          .select(
+            'id, report_date, title, work_hours, progress_rate, next_day_plan, ' +
+            'user:users(name, department:departments!users_department_id_fkey(name)), ' +
+            'tasks:report_tasks(title, status)'
+          )
+          .eq('id', id)
+          .single()
+
+        if (full) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const f = full as any
+          const message = formatReportSubmittedMessage({
+            reportId: f.id,
+            userName: f.user?.name || '不明',
+            reportDate: f.report_date,
+            departmentName: f.user?.department?.name || null,
+            workHours: f.work_hours ?? null,
+            progressRate: f.progress_rate ?? null,
+            title: f.title || null,
+            tasks: (f.tasks || []).map((t: { title: string; status?: string }) => ({
+              title: t.title,
+              status: t.status,
+            })),
+            nextDayPlan: f.next_day_plan || null,
+            appUrl: process.env.NEXT_PUBLIC_APP_URL,
+          })
+          // 失敗しても throw しないが、念のため try/catch
+          await sendLineWorksMessage(message)
+        }
+      } catch (notifyErr) {
+        console.error('[REPORT_PUT] LINE Works notification failed:', notifyErr)
+        // 日報提出自体は成功させる
+      }
+    }
 
     return NextResponse.json({ data })
   } catch (err) {
