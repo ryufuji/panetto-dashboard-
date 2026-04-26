@@ -45,8 +45,9 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
   const days = Math.min(Math.max(parseInt(params.days || '30') || 30, 7), 90)
   const supabase = await createClient()
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // JST基準の今日（サーバーUTCで動くため+9hシフトしてからローカル日付として扱う）
+  const nowJst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const today = new Date(nowJst.getUTCFullYear(), nowJst.getUTCMonth(), nowJst.getUTCDate())
 
   const startDate = new Date(today)
   startDate.setDate(startDate.getDate() - (days - 1))
@@ -343,18 +344,31 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
                         const reportDate = group.report.report_date
                         const color = getTaskColor(task.progress_rate)
 
+                        // start_date / due_date があればそのスパンで、無ければ report_date 1日のみ
+                        const startStr = task.start_date || reportDate
+                        const endStr = task.due_date || task.start_date || reportDate
+
+                        // 表示範囲内のインデックスを求める
+                        const startIdx = dateColumns.findIndex(d => toDateString(d) >= startStr)
+                        let endIdx = -1
+                        for (let i = dateColumns.length - 1; i >= 0; i--) {
+                          if (toDateString(dateColumns[i]) <= endStr) {
+                            endIdx = i
+                            break
+                          }
+                        }
+                        const visible = startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx
+                        const span = visible ? endIdx - startIdx + 1 : 0
+
                         return (
-                          <div key={task.id} className="flex h-10 border-b">
+                          <div key={task.id} className="flex h-10 border-b relative">
                             {dateColumns.map((date, idx) => {
-                              const dateStr = toDateString(date)
                               const isToday = isSameDay(date, today)
                               const info = formatDateHeader(date)
-                              const isTaskDay = dateStr === reportDate
-
                               return (
                                 <div
                                   key={idx}
-                                  className={`border-r last:border-r-0 flex items-center justify-center px-0.5 ${
+                                  className={`border-r last:border-r-0 ${
                                     isToday
                                       ? 'bg-blue-50/50 dark:bg-blue-950/20'
                                       : info.isWeekend
@@ -362,26 +376,26 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
                                         : ''
                                   }`}
                                   style={{ width: colWidth }}
-                                >
-                                  {isTaskDay && (
-                                    <div
-                                      className={`relative h-6 w-full rounded-sm mx-0.5 ${color.bg} overflow-hidden`}
-                                      title={`${task.title}: ${task.progress_rate}%`}
-                                    >
-                                      <div
-                                        className={`absolute inset-y-0 left-0 ${color.fill} rounded-sm transition-all`}
-                                        style={{ width: `${Math.max(task.progress_rate, 8)}%` }}
-                                      />
-                                      {colWidth >= 36 && (
-                                        <span className="absolute inset-0 flex items-center justify-center text-[9px] font-medium text-white mix-blend-difference">
-                                          {task.progress_rate}%
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                />
                               )
                             })}
+                            {visible && (
+                              <div
+                                className="absolute top-1.5 bottom-1.5 px-0.5"
+                                style={{ left: startIdx * colWidth, width: span * colWidth }}
+                                title={`${task.title} (${startStr} ~ ${endStr}) ${task.progress_rate}%`}
+                              >
+                                <div className={`relative h-full rounded-sm ${color.bg} overflow-hidden border border-white/20`}>
+                                  <div
+                                    className={`absolute inset-y-0 left-0 ${color.fill} rounded-sm transition-all`}
+                                    style={{ width: `${Math.max(task.progress_rate, 0)}%` }}
+                                  />
+                                  <span className="absolute inset-0 flex items-center px-2 text-[10px] font-medium text-white mix-blend-difference whitespace-nowrap overflow-hidden">
+                                    {task.progress_rate}% {span * colWidth >= 80 ? `· ${truncate(task.title, Math.floor(span * colWidth / 8))}` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
