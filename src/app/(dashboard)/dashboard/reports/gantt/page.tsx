@@ -63,16 +63,46 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
     dateColumns.push(d)
   }
 
-  // Fetch reports in the date range with user info
-  const { data: reports } = await supabase
-    .from('reports')
-    .select('id, report_date, title, user:users(name)')
-    .gte('report_date', startDateStr)
-    .lte('report_date', endDateStr)
-    .order('report_date', { ascending: true })
+  // (1) report_date が表示範囲内の reports を取得
+  // (2) 表示範囲内に start_date / due_date を持つタスクの report_id を別途取得して reports を追加
+  // → 過去の日付で書かれた日報でも、配下のタスク期限が表示範囲内ならガントに反映される
+  const [reportsByDateRes, tasksInRangeRes] = await Promise.all([
+    supabase
+      .from('reports')
+      .select('id, report_date, title, user:users(name)')
+      .gte('report_date', startDateStr)
+      .lte('report_date', endDateStr)
+      .order('report_date', { ascending: true }),
+    // 表示範囲に重なるタスク(start_date or due_date が範囲内)を取得して report_id を集める
+    supabase
+      .from('report_tasks')
+      .select('report_id')
+      .or(`and(start_date.gte.${startDateStr},start_date.lte.${endDateStr}),and(due_date.gte.${startDateStr},due_date.lte.${endDateStr})`),
+  ])
 
-  // Collect report IDs and fetch tasks
-  const reportIds = (reports || []).map((r: any) => r.id)
+  const reportsByDate = reportsByDateRes.data || []
+  const knownReportIds = new Set(reportsByDate.map((r: any) => r.id))
+  const extraReportIds = Array.from(
+    new Set(((tasksInRangeRes.data || []) as { report_id: string }[]).map(t => t.report_id))
+  ).filter(id => !knownReportIds.has(id))
+
+  let extraReports: any[] = []
+  if (extraReportIds.length > 0) {
+    const { data: extra } = await supabase
+      .from('reports')
+      .select('id, report_date, title, user:users(name)')
+      .in('id', extraReportIds)
+      .order('report_date', { ascending: true })
+    extraReports = extra || []
+  }
+
+  // 報告日の昇順でマージ (重複なし)
+  const reports = [...reportsByDate, ...extraReports].sort((a: any, b: any) =>
+    a.report_date.localeCompare(b.report_date)
+  )
+
+  // Collect report IDs and fetch tasks (親タスクを含む全行を取得)
+  const reportIds = reports.map((r: any) => r.id)
 
   let tasks: any[] = []
   if (reportIds.length > 0) {
