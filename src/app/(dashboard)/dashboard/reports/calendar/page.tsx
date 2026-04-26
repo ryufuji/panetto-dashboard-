@@ -40,7 +40,9 @@ function getFirstDayOfWeek(year: number, month: number): number {
 
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const params = await searchParams
-  const now = new Date()
+  // JST基準の今日。サーバーがUTCで動くため+9hシフトしてからローカル日付として扱う。
+  const nowJst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const now = new Date(nowJst.getUTCFullYear(), nowJst.getUTCMonth(), nowJst.getUTCDate())
 
   let year: number
   let month: number

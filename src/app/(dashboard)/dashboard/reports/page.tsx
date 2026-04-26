@@ -28,12 +28,15 @@ type MergedRow = {
   view_count: number
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string }> }) {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string; date?: string }> }) {
   const params = await searchParams
   const supabase = await createClient()
   const page = parseInt(params.page || '1')
   const limit = 20
   const offset = (page - 1) * limit
+
+  // 日付フィルタ (YYYY-MM-DD)。カレンダーから来た時に使う。
+  const dateFilter = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null
 
   // Fetch only enough rows to render the current page after merging.
   // We over-fetch by `offset+limit` from each source so the merged+sorted slice is correct.
@@ -48,14 +51,21 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   if (params.status) {
     reportsQuery = reportsQuery.eq('status', params.status)
   }
+  if (dateFilter) {
+    reportsQuery = reportsQuery.eq('report_date', dateFilter)
+  }
 
   const storeReportsPromise = params.status
     ? Promise.resolve({ data: [] as any[], count: 0 })
-    : supabase
-        .from('store_daily_reports')
-        .select('id, report_date, external_user_name, store_name, task_count, completed_count', { count: 'exact' })
-        .order('report_date', { ascending: false })
-        .limit(fetchCap)
+    : (() => {
+        let q = supabase
+          .from('store_daily_reports')
+          .select('id, report_date, external_user_name, store_name, task_count, completed_count', { count: 'exact' })
+          .order('report_date', { ascending: false })
+          .limit(fetchCap)
+        if (dateFilter) q = q.eq('report_date', dateFilter)
+        return q
+      })()
 
   const [reportsRes, storeReportsRes] = await Promise.all([reportsQuery, storeReportsPromise])
   const reports = reportsRes.data
@@ -129,7 +139,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">日報一覧</h1>
-          <p className="text-muted-foreground">全{totalCount}件</p>
+          <p className="text-muted-foreground">
+            {dateFilter ? <>📅 {dateFilter} の日報 - 全{totalCount}件 <Link href="/dashboard/reports" className="ml-2 text-blue-600 hover:underline">フィルタ解除</Link></> : <>全{totalCount}件</>}
+          </p>
         </div>
         <div className="flex gap-2">
           <SyncTasukaruButton />
