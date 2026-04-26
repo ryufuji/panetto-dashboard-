@@ -3,39 +3,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, Eye } from 'lucide-react'
 import Link from 'next/link'
-import { unstable_cache } from 'next/cache'
-
-// KPI counts are shared across all users — cache for 60s to absorb the 18-20時 spike.
-const getDashboardKpis = unstable_cache(
-  async (today: string) => {
-    const supabase = await createClient()
-    const [reports, pending, users, stores, storeTasks, pendingRequests] = await Promise.all([
-      supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
-      supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
-      supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    ])
-    return {
-      reports: reports.count || 0,
-      pending: pending.count || 0,
-      users: users.count || 0,
-      stores: stores.count || 0,
-      storeTasks: storeTasks.count || 0,
-      pendingRequests: pendingRequests.count || 0,
-    }
-  },
-  ['dashboard-kpis'],
-  { revalidate: 60, tags: ['dashboard-kpis'] }
-)
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user: authUser } } = await supabase.auth.getUser()
 
   const today = new Date().toISOString().split('T')[0]
-  const kpis = await getDashboardKpis(today)
+  const [
+    reportsRes,
+    pendingRes,
+    usersRes,
+    storesRes,
+    storeTasksRes,
+    pendingRequestsRes,
+  ] = await Promise.all([
+    supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
+    supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
+    supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
+    supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+  ])
+  const kpis = {
+    reports: reportsRes.count || 0,
+    pending: pendingRes.count || 0,
+    users: usersRes.count || 0,
+    stores: storesRes.count || 0,
+    storeTasks: storeTasksRes.count || 0,
+    pendingRequests: pendingRequestsRes.count || 0,
+  }
 
   const stats = [
     { label: '本日の日報', value: kpis.reports, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
