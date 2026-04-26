@@ -21,7 +21,7 @@ export default async function DashboardPage() {
     supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('store_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
+    supabase.from('store_daily_report_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
     supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
   ])
   const kpis = {
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
     { label: '承認待ち申請', value: kpis.pendingRequests, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
     { label: '在籍人数', value: kpis.users, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
     { label: '稼働店舗', value: kpis.stores, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
-    { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/stores' },
+    { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/reports' },
   ]
 
   // Run all remaining queries in parallel
@@ -71,10 +71,10 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(5),
     supabase
-      .from('store_tasks')
-      .select('id, title, store_name, status, start_date, due_date')
+      .from('store_daily_report_tasks')
+      .select('id, title, status, start_date, due_date, report:store_daily_reports!inner(store_name, external_user_name)')
       .neq('status', 'done')
-      .order('created_at', { ascending: false })
+      .order('synced_at', { ascending: false })
       .limit(5),
     authUser
       ? supabase
@@ -97,7 +97,9 @@ export default async function DashboardPage() {
   const storeTaskStatusLabels: Record<string, { label: string; color: string }> = {
     todo: { label: '未着手', color: 'bg-gray-50 text-gray-700 border-gray-200' },
     doing: { label: '進行中', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    in_progress: { label: '進行中', color: 'bg-blue-50 text-blue-700 border-blue-200' },
     blocked: { label: 'ブロック', color: 'bg-red-50 text-red-700 border-red-200' },
+    done: { label: '完了', color: 'bg-green-50 text-green-700 border-green-200' },
   }
 
   // Build per-department stats using O(n) Map lookups instead of O(n*m) filter
@@ -254,22 +256,23 @@ export default async function DashboardPage() {
                 <Store className="h-5 w-5 text-teal-500" />
                 店舗タスク
               </CardTitle>
-              <CardDescription>未完了 {kpis.storeTasks}件</CardDescription>
+              <CardDescription>未完了 {kpis.storeTasks}件（タス軽くん）</CardDescription>
             </div>
-            <Link href="/dashboard/stores" className="text-sm text-blue-600 hover:underline">全て表示</Link>
+            <Link href="/dashboard/reports" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {recentStoreTasks && recentStoreTasks.length > 0 ? recentStoreTasks.map((task: any) => {
                 const st = storeTaskStatusLabels[task.status] || storeTaskStatusLabels.todo
+                const storeName = task.report?.store_name
+                const userName = task.report?.external_user_name
                 return (
                   <div key={task.id} className="flex items-center justify-between rounded-lg border p-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm truncate">{task.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {task.store_name}
-                        {task.start_date ? ` | 開始: ${task.start_date}` : ''}
-                        {task.due_date ? ` | 終了: ${task.due_date}` : ''}
+                        {[storeName, userName].filter(Boolean).join(' / ')}
+                        {task.due_date ? ` | 期限: ${task.due_date}` : ''}
                       </p>
                     </div>
                     <Badge variant="outline" className={st.color}>{st.label}</Badge>
