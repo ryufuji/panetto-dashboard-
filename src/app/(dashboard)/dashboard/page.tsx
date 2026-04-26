@@ -58,6 +58,7 @@ export default async function DashboardPage() {
     supabase
       .from('reports')
       .select('id, report_date, status, user:users(name, department:departments!users_department_id_fkey(name))')
+      .order('report_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(10),
     supabase
@@ -194,7 +195,7 @@ export default async function DashboardPage() {
                 <Eye className="h-5 w-5 text-orange-500" />
                 未確認日報
               </CardTitle>
-              <CardDescription>{pendingApprovals?.length || 0}件の未確認</CardDescription>
+              <CardDescription>{kpis.pending}件の未確認{kpis.pending > 5 ? '（直近5件表示）' : ''}</CardDescription>
             </div>
             <Link href="/dashboard/approvals/pending" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
@@ -224,7 +225,7 @@ export default async function DashboardPage() {
                 <ClipboardList className="h-5 w-5 text-red-500" />
                 承認待ち申請
               </CardTitle>
-              <CardDescription>{pendingRequests?.length || 0}件の承認待ち</CardDescription>
+              <CardDescription>{kpis.pendingRequests}件の承認待ち{kpis.pendingRequests > 5 ? '（直近5件表示）' : ''}</CardDescription>
             </div>
             <Link href="/dashboard/approval-requests" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
