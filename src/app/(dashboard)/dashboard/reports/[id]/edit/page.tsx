@@ -48,7 +48,7 @@ export default function EditReportPage() {
   const [reportDate, setReportDate] = useState('')
   const [title, setTitle] = useState('')
   const [workHours, setWorkHours] = useState('')
-  const [progressRate, setProgressRate] = useState('')
+  // 全体進捗率は親タスクの進捗率の平均から自動計算する（手動入力廃止）
   const [nextDayPlan, setNextDayPlan] = useState('')
   const [workLocation, setWorkLocation] = useState('')
   const [condition, setCondition] = useState('')
@@ -131,7 +131,6 @@ export default function EditReportPage() {
       setReportDate(report.report_date || '')
       setTitle(report.title || '')
       setWorkHours(report.work_hours?.toString() || '')
-      setProgressRate(report.progress_rate?.toString() || '')
       setNextDayPlan(report.next_day_plan || '')
       setWorkLocation(report.work_location || '')
       setCondition(report.condition || '')
@@ -307,6 +306,14 @@ export default function EditReportPage() {
     setTasks(tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t))
   }
 
+  // 親タスクの進捗率の単純平均（親なし時は0）
+  const computedProgressRate = (() => {
+    const parentTasks = tasks.filter(t => t.parent_id === null && t.title.trim() !== '')
+    if (parentTasks.length === 0) return 0
+    const sum = parentTasks.reduce((s, t) => s + (Number(t.progress_rate) || 0), 0)
+    return Math.round(sum / parentTasks.length)
+  })()
+
   const updateTaskApproval = (taskId: string, field: string, value: any) => {
     setTasks(tasks.map(t => {
       if (t.id !== taskId) return t
@@ -469,7 +476,7 @@ export default function EditReportPage() {
           report_date: reportDate,
           title: title || null,
           work_hours: workHours ? parseFloat(workHours) : null,
-          progress_rate: progressRate ? parseInt(progressRate) : null,
+          progress_rate: computedProgressRate,
           next_day_plan: nextDayPlan || null,
           work_location: workLocation || null,
           condition: condition || null,
@@ -677,7 +684,18 @@ export default function EditReportPage() {
             </div>
             <div className="space-y-2">
               <Label>全体進捗率（%）</Label>
-              <Input type="number" min="0" max="100" placeholder="75" value={progressRate} onChange={e => setProgressRate(e.target.value)} />
+              <div className="flex items-center gap-3 h-9 px-3 rounded-md border bg-muted/30">
+                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      computedProgressRate >= 80 ? 'bg-green-500' : computedProgressRate >= 50 ? 'bg-yellow-500' : 'bg-blue-400'
+                    }`}
+                    style={{ width: `${computedProgressRate}%` }}
+                  />
+                </div>
+                <span className="text-sm font-semibold tabular-nums min-w-[3rem] text-right">{computedProgressRate}%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">親タスクの進捗率の平均から自動計算</p>
             </div>
             <div className="space-y-2">
               <Label>勤務場所</Label>
