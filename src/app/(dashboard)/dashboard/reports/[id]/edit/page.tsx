@@ -752,7 +752,7 @@ export default function EditReportPage() {
                   </div>
                   <div>
                     <Label className="text-xs">進捗(%)</Label>
-                    <Input type="number" min="0" max="100" value={task.progress_rate} onChange={e => updateTask(task.id, 'progress_rate', parseInt(e.target.value) || 0)} />
+                    <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
                   </div>
                   <div>
                     <Label className="text-xs">優先度</Label>
@@ -902,7 +902,7 @@ export default function EditReportPage() {
                       </div>
                       <div>
                         <Label className="text-xs">進捗(%)</Label>
-                        <Input type="number" min="0" max="100" value={child.progress_rate} onChange={e => updateTask(child.id, 'progress_rate', parseInt(e.target.value) || 0)} />
+                        <Input type="number" min="0" max="100" placeholder="0" value={child.progress_rate || ''} onChange={e => updateTask(child.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
                       </div>
                       <div>
                         <Label className="text-xs">開始日</Label>

@@ -337,7 +337,7 @@ export default function NewReportPage() {
                 <div className="grid grid-cols-6 gap-2">
                   <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} /></div>
-                  <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" value={task.progress_rate} onChange={e => updateTask(task.id, 'progress_rate', parseInt(e.target.value) || 0)} /></div>
+                  <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} /></div>
                   <div><Label className="text-xs">優先度</Label>
                     <Select value={task.priority} onValueChange={v => updateTask(task.id, 'priority', v)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -363,7 +363,7 @@ export default function NewReportPage() {
                     <div className="grid grid-cols-5 gap-2">
                       <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
                       <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>
-                      <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" value={child.progress_rate} onChange={e => updateTask(child.id, 'progress_rate', parseInt(e.target.value) || 0)} /></div>
+                      <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" placeholder="0" value={child.progress_rate || ''} onChange={e => updateTask(child.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} /></div>
                       <div><Label className="text-xs">開始日</Label><Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} /></div>
                       <div><Label className="text-xs">期限</Label><Input type="date" value={child.due_date} onChange={e => updateTask(child.id, 'due_date', e.target.value)} /></div>
                     </div>
