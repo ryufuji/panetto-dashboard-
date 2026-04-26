@@ -49,8 +49,8 @@ export default async function SalesPage({
     .eq('store_id', id)
     .order('sales_date', { ascending: false })
 
-  // Calculate summaries
-  const today = new Date().toISOString().split('T')[0]
+  // Calculate summaries (JST基準の今日。サーバーがUTCで動くため+9hシフト)
+  const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
   const currentMonth = today.substring(0, 7)
 
   const todaySales = sales?.filter((s: any) => s.sales_date === today) || []

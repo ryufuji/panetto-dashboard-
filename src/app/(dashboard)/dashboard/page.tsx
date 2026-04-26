@@ -8,7 +8,9 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user: authUser } } = await supabase.auth.getUser()
 
-  const today = new Date().toISOString().split('T')[0]
+  // JST (UTC+9) 基準の今日。サーバーがUTCで動くため、UTC midnight直後でも
+  // 日本時間で正しい日付になるよう+9hシフトしてから日付部分を切り出す。
+  const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [
     reportsRes,
     pendingRes,
