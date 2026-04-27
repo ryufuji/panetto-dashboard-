@@ -32,7 +32,7 @@ export default async function DashboardPage() {
       .order('submitted_at', { ascending: false, nullsFirst: false }),
   ])
 
-  // 提出済み日報のうち「本人以外の閲覧者がいないもの」=未確認 を集計
+  // 提出済み日報のうち「本人以外の閲覧者がいないもの」=承認待ち を集計
   const submittedReports = submittedReportsRes.data || []
   const submittedIds = submittedReports.map((r: any) => r.id)
   const viewedByOther = new Set<string>()
@@ -60,14 +60,14 @@ export default async function DashboardPage() {
 
   const stats = [
     { label: '本日の日報', value: kpis.reports, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
-    { label: '未確認日報', value: kpis.pending, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
+    { label: '承認待ち日報', value: kpis.pending, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
     { label: '承認待ち申請', value: kpis.pendingRequests, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
     { label: '在籍人数', value: kpis.users, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
     { label: '稼働店舗', value: kpis.stores, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
     { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/reports' },
   ]
 
-  // 未確認日報の直近5件（カード表示用）
+  // 承認待ち日報の直近5件（カード表示用）
   const recentUnconfirmed = unconfirmedReports.slice(0, 5)
 
   // Run all remaining queries in parallel
@@ -212,9 +212,9 @@ export default async function DashboardPage() {
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Eye className="h-5 w-5 text-orange-500" />
-                未確認日報
+                承認待ち日報
               </CardTitle>
-              <CardDescription>{kpis.pending}件の未確認{kpis.pending > 5 ? '（直近5件表示）' : ''}</CardDescription>
+              <CardDescription>{kpis.pending}件の承認待ち{kpis.pending > 5 ? '（直近5件表示）' : ''}</CardDescription>
             </div>
             <Link href="/dashboard/approvals/pending" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
@@ -227,10 +227,10 @@ export default async function DashboardPage() {
                     <p className="font-medium text-sm">{r.user?.name || '不明'}</p>
                     <p className="text-xs text-muted-foreground">{r.report_date}</p>
                   </div>
-                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未確認</Badge>
+                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未承認</Badge>
                 </Link>
               )) : (
-                <p className="text-sm text-muted-foreground text-center py-4">未確認の日報はありません</p>
+                <p className="text-sm text-muted-foreground text-center py-4">承認待ちの日報はありません</p>
               )}
             </div>
           </CardContent>
@@ -334,7 +334,7 @@ export default async function DashboardPage() {
                     report.status === 'approved' ? 'default' :
                     report.status === 'submitted' ? 'secondary' : 'outline'
                   }>
-                    {report.status === 'approved' ? '確認済' :
+                    {report.status === 'approved' ? '承認済' :
                      report.status === 'submitted' ? '提出済' : '下書き'}
                   </Badge>
                 </Link>

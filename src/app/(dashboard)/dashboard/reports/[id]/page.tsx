@@ -297,7 +297,7 @@ export default function ReportDetailPage() {
         {reportViews.length > 0 && (
           <Badge variant="outline" className="text-sm flex items-center gap-1 border-emerald-300 text-emerald-700">
             <Eye className="h-3.5 w-3.5" />
-            確認済 {reportViews.length}人
+            承認 {reportViews.length}人
           </Badge>
         )}
       </div>

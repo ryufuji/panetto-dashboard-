@@ -41,16 +41,16 @@ export default async function ConfirmationStatisticsPage() {
   const confirmRate = total > 0 ? Math.round((confirmedCount / total) * 100) : 0
 
   const stats = [
-    { label: '未確認', value: pendingCount, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { label: '確認済み', value: confirmedCount, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+    { label: '承認待ち', value: pendingCount, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50' },
+    { label: '承認済み', value: confirmedCount, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
   ]
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">確認統計</h1>
+        <h1 className="text-3xl font-bold tracking-tight">承認統計</h1>
         <p className="text-muted-foreground">
-          提出された日報全{total}件のうち、本人以外が閲覧した割合
+          提出された日報全{total}件のうち、提出者以外が閲覧して承認扱いになった割合
         </p>
       </div>
 
@@ -73,13 +73,13 @@ export default async function ConfirmationStatisticsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />確認率
+            <BarChart3 className="h-5 w-5" />承認率
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-4xl font-bold text-green-600">{confirmRate}%</p>
           <p className="text-sm text-muted-foreground mt-1">
-            全{total}件中{confirmedCount}件で本人以外の閲覧あり
+            全{total}件中{confirmedCount}件が承認済み
           </p>
           {total > 0 && (
             <div className="mt-4 h-3 rounded-full bg-gray-100 overflow-hidden">

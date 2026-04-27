@@ -24,8 +24,8 @@ const navigation = [
     { name: '月次レポート', href: '/dashboard/reports/monthly' },
   ]},
   { name: '承認確認', icon: CheckSquare, children: [
-    { name: '確認待ち', href: '/dashboard/approvals/pending' },
-    { name: '確認済み', href: '/dashboard/approvals/approved' },
+    { name: '承認待ち', href: '/dashboard/approvals/pending' },
+    { name: '承認済み', href: '/dashboard/approvals/approved' },
     // 統計ページは不要のため一時非表示。再開時はこの行のコメントを外す:
     // { name: '統計', href: '/dashboard/approvals/statistics' },
   ]},

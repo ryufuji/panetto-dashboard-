@@ -5,11 +5,11 @@ import { CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 
 /**
- * 確認済み日報一覧
+ * 承認済み日報一覧
  *
  * 旧: approvals.status='approved' を取得
  * 新: report_views を使い、提出済みかつ「本人以外の閲覧者がいる」日報を表示
- *     最初の他者閲覧時刻と閲覧者名も表示
+ *     表示文言は「承認済み / 承認」で統一（閲覧 = 承認 という意味付け）
  */
 export default async function ConfirmedReportsPage() {
   const supabase = await createClient()
@@ -56,9 +56,9 @@ export default async function ConfirmedReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">確認済み一覧</h1>
+        <h1 className="text-3xl font-bold tracking-tight">承認済み</h1>
         <p className="text-muted-foreground">
-          {confirmed.length}件 — 本人以外が閲覧した日報（最大100件）
+          {confirmed.length}件 — 提出者以外が閲覧したことで承認扱いになった日報（最新100件）
         </p>
       </div>
       <div className="space-y-3">
@@ -72,7 +72,7 @@ export default async function ConfirmedReportsPage() {
                     <CheckCircle className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium text-sm">
-                        {r.user?.name || '不明'} の日報
+                        {r.user?.name || '不明'}
                         {r.title ? ` - ${r.title}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -81,18 +81,18 @@ export default async function ConfirmedReportsPage() {
                       </p>
                       {fv && (
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          初回確認: {fv.viewer_name || '不明'}（{new Date(fv.viewed_at).toLocaleString('ja-JP')}）
+                          承認者: {fv.viewer_name || '不明'}（{new Date(fv.viewed_at).toLocaleString('ja-JP')}）
                         </p>
                       )}
                     </div>
                   </div>
-                  <Badge className="bg-green-50 text-green-700 border-green-200">確認済</Badge>
+                  <Badge className="bg-green-50 text-green-700 border-green-200">承認済</Badge>
                 </CardContent>
               </Card>
             </Link>
           )
         }) : (
-          <p className="text-center text-muted-foreground py-8">確認済みの日報はありません</p>
+          <p className="text-center text-muted-foreground py-8">承認済みの日報はありません</p>
         )}
       </div>
     </div>

@@ -61,18 +61,18 @@ export default function ApprovalDetailPage() {
       <div className="flex items-center gap-4">
         <Link href="/dashboard/approvals/pending"><Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-4 w-4" />戻る</Button></Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">確認詳細</h1>
+          <h1 className="text-2xl font-bold">承認詳細</h1>
           <p className="text-sm text-muted-foreground">{approval.requester?.name}の日報</p>
         </div>
         <Badge variant="outline" className={approval.status === 'approved' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700'}>
-          {approval.status === 'approved' ? '確認済' : '確認待ち'}
+          {approval.status === 'approved' ? '承認済' : '承認待ち'}
         </Badge>
       </div>
 
       {approval.status === 'approved' && autoApproved.current && !error && (
         <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
           <CheckCircle className="h-4 w-4 shrink-0" />
-          確認済みとして記録しました
+          承認済みとして記録しました
         </div>
       )}
 

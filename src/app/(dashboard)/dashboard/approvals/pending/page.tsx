@@ -5,10 +5,11 @@ import { CheckSquare, Eye } from 'lucide-react'
 import Link from 'next/link'
 
 /**
- * 確認待ち日報一覧
+ * 承認待ち日報一覧
  *
  * 旧: approvals.status='pending' を取得していた（部長承認の待ち列）
  * 新: report_views を使い、提出済みでまだ「本人以外の閲覧者」がいない日報を表示
+ *     表示文言は「承認待ち / 未承認」で統一（閲覧 = 承認 という意味付け）
  */
 export default async function PendingConfirmationsPage() {
   const supabase = await createClient()
@@ -44,9 +45,9 @@ export default async function PendingConfirmationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">確認待ち</h1>
+        <h1 className="text-3xl font-bold tracking-tight">承認待ち</h1>
         <p className="text-muted-foreground">
-          {pending.length}件 — 提出されたが、まだ本人以外が閲覧していない日報
+          {pending.length}件 — 提出済みでまだ承認されていません（提出者以外が閲覧した時点で承認扱いになります）
         </p>
       </div>
       <div className="space-y-3">
@@ -60,7 +61,7 @@ export default async function PendingConfirmationsPage() {
                   </div>
                   <div>
                     <p className="font-medium">
-                      {r.user?.name || '不明'} の日報
+                      {r.user?.name || '不明'}
                       {r.title ? ` - ${r.title}` : ''}
                     </p>
                     <p className="text-sm text-muted-foreground">
@@ -72,10 +73,10 @@ export default async function PendingConfirmationsPage() {
                 <div className="flex items-center gap-3">
                   {r.submitted_at && (
                     <span className="text-xs text-muted-foreground">
-                      {new Date(r.submitted_at).toLocaleString('ja-JP')}
+                      提出: {new Date(r.submitted_at).toLocaleString('ja-JP')}
                     </span>
                   )}
-                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未確認</Badge>
+                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未承認</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -84,8 +85,8 @@ export default async function PendingConfirmationsPage() {
           <Card>
             <CardContent className="flex flex-col items-center py-12">
               <CheckSquare className="h-12 w-12 text-green-500 mb-4" />
-              <p className="font-medium text-lg">未確認の日報はありません</p>
-              <p className="text-sm text-muted-foreground">提出された日報はすべて誰かが閲覧しています</p>
+              <p className="font-medium text-lg">承認待ちはありません</p>
+              <p className="text-sm text-muted-foreground">提出された日報はすべて承認済みです</p>
             </CardContent>
           </Card>
         )}
