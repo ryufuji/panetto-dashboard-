@@ -92,25 +92,25 @@ export async function PUT(
 
     // Note: approval creation is handled by the DB trigger (trg_report_on_submit)
 
-    // LINE Works 通知: draft/未提出 → submitted への遷移時のみ発火
+    // LINE Works 通知: 未提出 → submitted への遷移時のみ発火（重複防止のため
+    // lineworks_notified_at が未設定のときのみ送信し、成功したら記録する）
     const wasNotSubmitted = existing.status !== 'submitted'
     const isNowSubmitted = data.status === 'submitted'
     if (wasNotSubmitted && isNowSubmitted) {
       try {
-        // 通知に必要なリレーションを1クエリでまとめて取得
         const { data: full } = await supabase
           .from('reports')
           .select(
-            'id, report_date, title, work_hours, progress_rate, next_day_plan, ' +
+            'id, report_date, title, work_hours, progress_rate, next_day_plan, lineworks_notified_at, ' +
             'user:users(name, department:departments!users_department_id_fkey(name)), ' +
             'tasks:report_tasks(title, status)'
           )
           .eq('id', id)
           .single()
 
-        if (full) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const f = full as any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const f = full as any
+        if (f && !f.lineworks_notified_at) {
           const message = formatReportSubmittedMessage({
             reportId: f.id,
             userName: f.user?.name || '不明',
@@ -126,8 +126,13 @@ export async function PUT(
             nextDayPlan: f.next_day_plan || null,
             appUrl: process.env.NEXT_PUBLIC_APP_URL,
           })
-          // 失敗しても throw しないが、念のため try/catch
-          await sendLineWorksMessage(message)
+          const result = await sendLineWorksMessage(message)
+          if (result.ok) {
+            await supabase
+              .from('reports')
+              .update({ lineworks_notified_at: new Date().toISOString() })
+              .eq('id', id)
+          }
         }
       } catch (notifyErr) {
         console.error('[REPORT_PUT] LINE Works notification failed:', notifyErr)

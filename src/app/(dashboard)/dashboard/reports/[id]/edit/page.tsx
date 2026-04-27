@@ -629,6 +629,16 @@ export default function EditReportPage() {
         })
       }
 
+      // 提出時はLINE Worksにも通知（draft→submittedの遷移時のみ。既に提出済みなら
+      // notify-submission側でlineworks_notified_atをチェックして二重送信を防ぐ）
+      if (status === 'submitted' && originalStatus !== 'submitted') {
+        try {
+          await fetch(`/api/reports/${id}/notify-submission`, { method: 'POST' })
+        } catch (notifyErr) {
+          console.error('[REPORT_EDIT] notify-submission failed:', notifyErr)
+        }
+      }
+
       toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
       router.push(`/dashboard/reports/${id}`)
     } catch (err: any) {

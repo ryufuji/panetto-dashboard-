@@ -273,6 +273,15 @@ export default function NewReportPage() {
         })
       }
 
+      // 提出時はLINE Worksにも通知（失敗しても保存は成功扱い）
+      if (status === 'submitted') {
+        try {
+          await fetch(`/api/reports/${report.id}/notify-submission`, { method: 'POST' })
+        } catch (notifyErr) {
+          console.error('[REPORT_NEW] notify-submission failed:', notifyErr)
+        }
+      }
+
       toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
       router.push('/dashboard/reports')
     } catch (err: any) {
