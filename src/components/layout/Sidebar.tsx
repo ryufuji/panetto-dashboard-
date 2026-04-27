@@ -19,7 +19,8 @@ const navigation = [
     // テンプレート機能は実装未完了のため一時的に非表示。再開時はこの行のコメントを外す:
     // { name: 'テンプレート', href: '/dashboard/reports/templates' },
     { name: 'ガントチャート', href: '/dashboard/reports/gantt' },
-    { name: 'カレンダー', href: '/dashboard/reports/calendar' },
+    // カレンダー機能は一時的に非表示。再開時はこの行のコメントを外す:
+    // { name: 'カレンダー', href: '/dashboard/reports/calendar' },
     { name: '月次レポート', href: '/dashboard/reports/monthly' },
   ]},
   { name: '日報確認', icon: CheckSquare, children: [
