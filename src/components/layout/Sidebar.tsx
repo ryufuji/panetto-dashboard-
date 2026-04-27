@@ -26,7 +26,8 @@ const navigation = [
   { name: '承認確認', icon: CheckSquare, children: [
     { name: '確認待ち', href: '/dashboard/approvals/pending' },
     { name: '確認済み', href: '/dashboard/approvals/approved' },
-    { name: '統計', href: '/dashboard/approvals/statistics' },
+    // 統計ページは不要のため一時非表示。再開時はこの行のコメントを外す:
+    // { name: '統計', href: '/dashboard/approvals/statistics' },
   ]},
   { name: 'パフォーマンス分析', icon: BarChart3, children: [
     { name: '社員ランキング', href: '/dashboard/performance' },
