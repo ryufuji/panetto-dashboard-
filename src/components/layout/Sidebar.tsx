@@ -103,7 +103,19 @@ export function Sidebar() {
           }
 
           const isOpen = openMenus.includes(item.name)
-          const hasActiveChild = item.children?.some(c => pathname === c.href || pathname.startsWith(c.href + '/'))
+          // 子メニューの中で「最長プレフィックスマッチ」したものだけをアクティブにする
+          // 例: pathname='/dashboard/reports/new' のとき、'/dashboard/reports' と
+          // '/dashboard/reports/new' の両方がprefixに一致するが、長い方のみ active
+          const activeChildHref = (() => {
+            let best: string | null = null
+            for (const c of item.children || []) {
+              if (pathname === c.href || pathname.startsWith(c.href + '/')) {
+                if (!best || c.href.length > best.length) best = c.href
+              }
+            }
+            return best
+          })()
+          const hasActiveChild = !!activeChildHref
 
           return (
             <div key={item.name}>
@@ -123,7 +135,7 @@ export function Sidebar() {
               {!collapsed && isOpen && item.children && (
                 <div className="ml-4 mt-1 space-y-1 border-l pl-4">
                   {item.children.map((child) => {
-                    const isActive = pathname === child.href || pathname.startsWith(child.href + '/')
+                    const isActive = activeChildHref === child.href
                     return (
                       <Link key={child.href} href={child.href}
                         className={cn(
