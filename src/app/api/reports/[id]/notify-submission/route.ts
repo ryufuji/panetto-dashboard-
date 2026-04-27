@@ -13,6 +13,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendLineWorksMessage, formatReportSubmittedMessage } from '@/lib/lineworks'
 
@@ -22,15 +23,22 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const supabase = await createClient()
 
+    // 認証はユーザーセッションで実施
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 通知に必要なリレーションを1クエリで取得
-    const { data: report, error } = await supabase
+    // 通知用のレポート取得は Service Role を使う(RLSやJOINの組み合わせで
+    // 直後のINSERTが見えないケースを回避。読み取り後にuser.idで権限チェック)
+    const admin = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    const { data: report, error } = await admin
       .from('reports')
       .select(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, lineworks_notified_at, ' +
@@ -41,10 +49,11 @@ export async function POST(
       .single()
 
     if (error || !report) {
-      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+      console.error('[NOTIFY] Report fetch failed:', { id, error: error?.message, code: error?.code })
+      return NextResponse.json({ error: 'Report not found', detail: error?.message }, { status: 404 })
     }
 
-    // 本人のみ
+    // 本人のみ（権限チェック）
     if ((report as any).user_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -80,7 +89,7 @@ export async function POST(
 
     // 送信成功時にタイムスタンプ記録（再送防止）
     if (result.ok) {
-      await supabase
+      await admin
         .from('reports')
         .update({ lineworks_notified_at: new Date().toISOString() })
         .eq('id', id)
