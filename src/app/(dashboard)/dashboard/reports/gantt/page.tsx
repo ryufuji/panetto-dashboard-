@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, GitBranch, CalendarDays } from 'lucide-react'
 import Link from 'next/link'
+import { ReportListFilters } from '@/components/reports/ReportListFilters'
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -40,10 +41,32 @@ function getTaskColor(progressRate: number): { bg: string; fill: string; label: 
   return { bg: 'bg-gray-100', fill: 'bg-gray-300', label: '未着手' }
 }
 
-export default async function GanttPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
+export default async function GanttPage({ searchParams }: { searchParams: Promise<{ days?: string; user?: string; department?: string }> }) {
   const params = await searchParams
   const days = Math.min(Math.max(parseInt(params.days || '30') || 30, 7), 90)
   const supabase = await createClient()
+
+  // 名前 / 部署フィルタ
+  const userQuery = params.user?.trim() || ''
+  const departmentId = params.department?.trim() || ''
+
+  // 名前フィルタが指定されていれば対象 user_id を絞り込む
+  let userIdsForFilter: string[] | null = null
+  if (userQuery) {
+    const { data: matchedUsers } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('name', `%${userQuery}%`)
+      .limit(500)
+    userIdsForFilter = (matchedUsers || []).map((u: any) => u.id)
+    if (userIdsForFilter.length === 0) userIdsForFilter = ['__no_match__']
+  }
+
+  const departmentsRes = await supabase
+    .from('departments')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('order_index', { ascending: true })
 
   // JST基準の今日（サーバーUTCで動くため+9hシフトしてからローカル日付として扱う）
   const nowJst = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -66,13 +89,23 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
   // (1) report_date が表示範囲内の reports を取得
   // (2) 表示範囲内に start_date / due_date を持つタスクの report_id を別途取得して reports を追加
   // → 過去の日付で書かれた日報でも、配下のタスク期限が表示範囲内ならガントに反映される
+  // ベースクエリにフィルタを適用するヘルパー
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyUserDeptFilter = (q: any) => {
+    if (departmentId) q = q.eq('department_id', departmentId)
+    if (userIdsForFilter) q = q.in('user_id', userIdsForFilter)
+    return q
+  }
+
   const [reportsByDateRes, tasksInRangeRes] = await Promise.all([
-    supabase
-      .from('reports')
-      .select('id, report_date, title, user:users(name)')
-      .gte('report_date', startDateStr)
-      .lte('report_date', endDateStr)
-      .order('report_date', { ascending: true }),
+    applyUserDeptFilter(
+      supabase
+        .from('reports')
+        .select('id, report_date, title, user:users(name)')
+        .gte('report_date', startDateStr)
+        .lte('report_date', endDateStr)
+        .order('report_date', { ascending: true })
+    ),
     // 表示範囲に重なるタスク(start_date or due_date が範囲内)を取得して report_id を集める
     supabase
       .from('report_tasks')
@@ -88,11 +121,13 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
 
   let extraReports: any[] = []
   if (extraReportIds.length > 0) {
-    const { data: extra } = await supabase
-      .from('reports')
-      .select('id, report_date, title, user:users(name)')
-      .in('id', extraReportIds)
-      .order('report_date', { ascending: true })
+    const { data: extra } = await applyUserDeptFilter(
+      supabase
+        .from('reports')
+        .select('id, report_date, title, user:users(name)')
+        .in('id', extraReportIds)
+        .order('report_date', { ascending: true })
+    )
     extraReports = extra || []
   }
 
@@ -172,35 +207,61 @@ export default async function GanttPage({ searchParams }: { searchParams: Promis
     }
   }
 
+  // 日数切替用URLにユーザー/部署フィルタを保持する
+  const filterQs = (() => {
+    const sp = new URLSearchParams()
+    if (userQuery) sp.set('user', userQuery)
+    if (departmentId) sp.set('department', departmentId)
+    return sp.toString()
+  })()
+  const buildDaysHref = (n: number) => {
+    const sp = new URLSearchParams()
+    sp.set('days', String(n))
+    if (userQuery) sp.set('user', userQuery)
+    if (departmentId) sp.set('department', departmentId)
+    return `/dashboard/reports/gantt?${sp.toString()}`
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ガントチャート</h1>
           <p className="text-muted-foreground">
             {startDateStr} ~ {endDateStr}（{days}日間）
+            {(userQuery || departmentId) && <span className="ml-2 text-blue-600">フィルタ適用中</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/dashboard/reports/gantt?days=7`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href={buildDaysHref(7)}>
             <Button variant={days === 7 ? 'default' : 'outline'} size="sm">1週間</Button>
           </Link>
-          <Link href={`/dashboard/reports/gantt?days=14`}>
+          <Link href={buildDaysHref(14)}>
             <Button variant={days === 14 ? 'default' : 'outline'} size="sm">2週間</Button>
           </Link>
-          <Link href={`/dashboard/reports/gantt?days=30`}>
+          <Link href={buildDaysHref(30)}>
             <Button variant={days === 30 ? 'default' : 'outline'} size="sm">30日</Button>
           </Link>
-          <Link href={`/dashboard/reports/gantt?days=60`}>
+          <Link href={buildDaysHref(60)}>
             <Button variant={days === 60 ? 'default' : 'outline'} size="sm">60日</Button>
           </Link>
-          <Link href="/dashboard/reports">
+          <Link href={filterQs ? `/dashboard/reports?${filterQs}` : '/dashboard/reports'}>
             <Button variant="outline" size="sm">
               <ChevronLeft className="mr-1 h-4 w-4" />一覧に戻る
             </Button>
           </Link>
         </div>
       </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <ReportListFilters
+            departments={departmentsRes.data || []}
+            basePath="/dashboard/reports/gantt"
+            preservedKeys={['days']}
+          />
+        </CardContent>
+      </Card>
 
       {totalTasks === 0 ? (
         <Card>

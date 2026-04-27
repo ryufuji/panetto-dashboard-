@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, FileText, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { SyncTasukaruButton } from '@/components/reports/sync-tasukaru-button'
+import { ReportListFilters } from '@/components/reports/ReportListFilters'
 
 const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   draft: { label: '下書き', variant: 'outline' },
@@ -28,7 +29,7 @@ type MergedRow = {
   view_count: number
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string; date?: string }> }) {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string; date?: string; user?: string; department?: string }> }) {
   const params = await searchParams
   const supabase = await createClient()
   const page = parseInt(params.page || '1')
@@ -37,6 +38,30 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   // 日付フィルタ (YYYY-MM-DD)。カレンダーから来た時に使う。
   const dateFilter = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null
+  // 名前(部分一致)・部署(department.id)フィルタ
+  const userQuery = params.user?.trim() || ''
+  const departmentId = params.department?.trim() || ''
+
+  // 名前フィルタが指定されていれば、対象 user_id を先に絞り込む
+  let userIdsForFilter: string[] | null = null
+  if (userQuery) {
+    const { data: matchedUsers } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('name', `%${userQuery}%`)
+      .limit(500)
+    userIdsForFilter = (matchedUsers || []).map((u: any) => u.id)
+    if (userIdsForFilter.length === 0) {
+      userIdsForFilter = ['__no_match__'] // ヒット0件をDB側で表現
+    }
+  }
+
+  // 全部署一覧（ドロップダウン用）
+  const departmentsRes = await supabase
+    .from('departments')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('order_index', { ascending: true })
 
   // Fetch only enough rows to render the current page after merging.
   // We over-fetch by `offset+limit` from each source so the merged+sorted slice is correct.
@@ -54,8 +79,16 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   if (dateFilter) {
     reportsQuery = reportsQuery.eq('report_date', dateFilter)
   }
+  if (departmentId) {
+    reportsQuery = reportsQuery.eq('department_id', departmentId)
+  }
+  if (userIdsForFilter) {
+    reportsQuery = reportsQuery.in('user_id', userIdsForFilter)
+  }
 
-  const storeReportsPromise = params.status
+  // 名前/部署フィルタ時は store_daily_reports は対象外（タス軽くんはユーザーIDで紐付かない）
+  const skipStoreReports = !!params.status || !!userQuery || !!departmentId
+  const storeReportsPromise = skipStoreReports
     ? Promise.resolve({ data: [] as any[], count: 0 })
     : (() => {
         let q = supabase
@@ -152,7 +185,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="space-y-3">
           <div className="flex flex-wrap gap-2">
             <Link href="/dashboard/reports"><Badge variant={!params.status ? 'default' : 'outline'} className="cursor-pointer">全て</Badge></Link>
             {Object.entries(statusMap).map(([key, { label }]) => (
@@ -161,6 +194,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               </Link>
             ))}
           </div>
+          <ReportListFilters
+            departments={departmentsRes.data || []}
+            basePath="/dashboard/reports"
+            preservedKeys={['status', 'date']}
+          />
         </CardHeader>
         <CardContent>
           <Table>

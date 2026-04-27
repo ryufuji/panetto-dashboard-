@@ -13,22 +13,45 @@ export default async function DashboardPage() {
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [
     reportsRes,
-    pendingRes,
     usersRes,
     storesRes,
     storeTasksRes,
     pendingRequestsRes,
+    submittedReportsRes,
   ] = await Promise.all([
     supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
-    supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('store_daily_report_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
     supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    // 提出済み日報を取得（確認状態の判定用）
+    supabase
+      .from('reports')
+      .select('id, report_date, user_id, submitted_at, user:users(name, department:departments!users_department_id_fkey(name))')
+      .in('status', ['submitted', 'approved'])
+      .order('submitted_at', { ascending: false, nullsFirst: false }),
   ])
+
+  // 提出済み日報のうち「本人以外の閲覧者がいないもの」=未確認 を集計
+  const submittedReports = submittedReportsRes.data || []
+  const submittedIds = submittedReports.map((r: any) => r.id)
+  const viewedByOther = new Set<string>()
+  if (submittedIds.length > 0) {
+    const { data: views } = await supabase
+      .from('report_views')
+      .select('report_id, user_id')
+      .in('report_id', submittedIds)
+    const ownerMap = new Map<string, string>()
+    for (const r of submittedReports as any[]) ownerMap.set(r.id, r.user_id)
+    for (const v of (views || []) as { report_id: string; user_id: string }[]) {
+      if (ownerMap.get(v.report_id) !== v.user_id) viewedByOther.add(v.report_id)
+    }
+  }
+  const unconfirmedReports = submittedReports.filter((r: any) => !viewedByOther.has(r.id))
+
   const kpis = {
     reports: reportsRes.count || 0,
-    pending: pendingRes.count || 0,
+    pending: unconfirmedReports.length,
     users: usersRes.count || 0,
     stores: storesRes.count || 0,
     storeTasks: storeTasksRes.count || 0,
@@ -44,10 +67,12 @@ export default async function DashboardPage() {
     { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/reports' },
   ]
 
+  // 未確認日報の直近5件（カード表示用）
+  const recentUnconfirmed = unconfirmedReports.slice(0, 5)
+
   // Run all remaining queries in parallel
   const [
     { data: recentReports },
-    { data: pendingApprovals },
     { data: pendingRequests },
     { data: recentStoreTasks },
     { data: pendingExtensions },
@@ -61,12 +86,6 @@ export default async function DashboardPage() {
       .order('report_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(10),
-    supabase
-      .from('approvals')
-      .select('id, status, report:reports(report_date, user:users(name)), requester:users!approvals_requester_id_fkey(name)')
-      .eq('status', 'pending')
-      .order('requested_at', { ascending: false })
-      .limit(5),
     supabase
       .from('approval_requests')
       .select('id, title, created_at, requester:users!approval_requests_requester_id_fkey(name)')
@@ -201,12 +220,12 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {pendingApprovals && pendingApprovals.length > 0 ? pendingApprovals.map((approval: any) => (
-                <Link key={approval.id} href={`/dashboard/approvals/${approval.id}`}
+              {recentUnconfirmed.length > 0 ? recentUnconfirmed.map((r: any) => (
+                <Link key={r.id} href={`/dashboard/reports/${r.id}`}
                   className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
                   <div>
-                    <p className="font-medium text-sm">{approval.requester?.name}</p>
-                    <p className="text-xs text-muted-foreground">{approval.report?.report_date}</p>
+                    <p className="font-medium text-sm">{r.user?.name || '不明'}</p>
+                    <p className="text-xs text-muted-foreground">{r.report_date}</p>
                   </div>
                   <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未確認</Badge>
                 </Link>
