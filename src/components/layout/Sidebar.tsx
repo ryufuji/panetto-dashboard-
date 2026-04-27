@@ -23,7 +23,7 @@ const navigation = [
     // { name: 'カレンダー', href: '/dashboard/reports/calendar' },
     { name: '月次レポート', href: '/dashboard/reports/monthly' },
   ]},
-  { name: '日報確認', icon: CheckSquare, children: [
+  { name: '承認確認', icon: CheckSquare, children: [
     { name: '確認待ち', href: '/dashboard/approvals/pending' },
     { name: '確認済み', href: '/dashboard/approvals/approved' },
     { name: '統計', href: '/dashboard/approvals/statistics' },
@@ -58,7 +58,7 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '日報確認'])
+  const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '承認確認'])
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev =>
