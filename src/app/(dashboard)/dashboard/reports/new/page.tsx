@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2 } from 'lucide-react'
+import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { type Task, type TaskApproval, type PlannedTask, defaultApproval } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
@@ -35,6 +35,15 @@ export default function NewReportPage() {
     { id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '', progress_rate: 0, task_type: '', priority: 'medium', start_date: today, due_date: '', parent_id: null, approval: defaultApproval() }
   ])
   const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([])
+  // 子課題の展開状態（開いている親タスクのIDを保持）
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  const toggleExpand = (parentId: string) =>
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
+      return next
+    })
   const [members, setMembers] = useState<any[]>([])
   const [thresholdRules, setThresholdRules] = useState<any[]>([])
   const [defaultApproverId, setDefaultApproverId] = useState<string | null>(null)
@@ -93,6 +102,10 @@ export default function NewReportPage() {
   }
 
   const addTask = (parentId: string | null = null) => {
+    // 子タスクを追加した時は親を自動的に展開する
+    if (parentId) {
+      setExpandedParents(prev => new Set(prev).add(parentId))
+    }
     setTasks([...tasks, {
       id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '',
       progress_rate: 0, task_type: '', priority: 'medium', start_date: today, due_date: '', parent_id: parentId, approval: defaultApproval()
@@ -380,7 +393,20 @@ export default function NewReportPage() {
                   <div><Label className="text-xs">期限</Label><Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} /></div>
                 </div>
 
-                {children.map((child, j) => (
+                {/* 子課題は展開式 */}
+                {children.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1 text-muted-foreground"
+                    onClick={() => toggleExpand(task.id)}
+                  >
+                    {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    子課題 {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
+                  </Button>
+                )}
+                {expandedParents.has(task.id) && children.map((child, j) => (
                   <div key={child.id} className="ml-6 rounded-lg border border-dashed p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">子課題 {j + 1}</span>

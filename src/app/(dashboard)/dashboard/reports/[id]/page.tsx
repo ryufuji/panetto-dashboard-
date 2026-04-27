@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2, CalendarClock, Check, X, Eye, Users } from 'lucide-react'
+import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2, CalendarClock, Check, X, Eye, Users, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -60,6 +60,15 @@ export default function ReportDetailPage() {
   const [extensionActions, setExtensionActions] = useState<Record<string, { comment: string; acting: boolean }>>({})
   const [plannedTasks, setPlannedTasks] = useState<any[]>([])
   const [reportViews, setReportViews] = useState<any[]>([])
+  // 子課題の展開状態
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  const toggleExpand = (parentId: string) =>
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
+      return next
+    })
   const [viewRecorded, setViewRecorded] = useState(false)
 
   const fetchReport = useCallback(async () => {
@@ -400,23 +409,37 @@ export default function ReportDetailPage() {
                     )}
 
                     {children.length > 0 && (
-                      <div className="mt-3 ml-4 space-y-2 border-l pl-4">
-                        {children.map((child: any) => (
-                          <div key={child.id} className="rounded border border-dashed p-3">
-                            <p className="font-medium text-sm">{child.title}</p>
-                            <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-                              <span>見積: {child.estimated_hours || '-'}h</span>
-                              <span>実績: {child.actual_hours || '-'}h</span>
-                              <span>進捗: {child.progress_rate}%</span>
-                              {child.due_date && (
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  期限: {child.due_date}
-                                </span>
-                              )}
-                            </div>
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1 text-muted-foreground"
+                          onClick={() => toggleExpand(task.id)}
+                        >
+                          {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          子課題 {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
+                        </Button>
+                        {expandedParents.has(task.id) && (
+                          <div className="mt-2 ml-4 space-y-2 border-l pl-4">
+                            {children.map((child: any) => (
+                              <div key={child.id} className="rounded border border-dashed p-3">
+                                <p className="font-medium text-sm">{child.title}</p>
+                                <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                                  <span>見積: {child.estimated_hours || '-'}h</span>
+                                  <span>実績: {child.actual_hours || '-'}h</span>
+                                  <span>進捗: {child.progress_rate}%</span>
+                                  {child.due_date && (
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      期限: {child.due_date}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                     {task.approval_request && (

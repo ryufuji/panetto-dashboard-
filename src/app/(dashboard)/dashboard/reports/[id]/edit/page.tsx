@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, Link2, Lock, CalendarClock } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, Link2, Lock, CalendarClock, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval } from '@/types/report'
@@ -63,6 +63,15 @@ export default function EditReportPage() {
   const [defaultApproverId, setDefaultApproverId] = useState<string | null>(null)
   const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([])
   const [extensionForms, setExtensionForms] = useState<Record<string, { open: boolean; proposed_due_date: string; reason: string; approver_id: string; submitting: boolean }>>({})
+  // 子課題の展開状態
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  const toggleExpand = (parentId: string) =>
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
+      return next
+    })
 
   useEffect(() => {
     fetchReport()
@@ -282,6 +291,7 @@ export default function EditReportPage() {
   }
 
   const addTask = (parentId: string | null = null) => {
+    if (parentId) setExpandedParents(prev => new Set(prev).add(parentId))
     setTasks([...tasks, {
       id: crypto.randomUUID(),
       title: '',
@@ -909,7 +919,20 @@ export default function EditReportPage() {
                   </div>
                 )}
 
-                {children.map((child, j) => (
+                {/* 子課題は展開式 */}
+                {children.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1 text-muted-foreground"
+                    onClick={() => toggleExpand(task.id)}
+                  >
+                    {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    子課題 {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
+                  </Button>
+                )}
+                {expandedParents.has(task.id) && children.map((child, j) => (
                   <div key={child.id} className="ml-6 rounded-lg border border-dashed p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">子課題 {j + 1}</span>
