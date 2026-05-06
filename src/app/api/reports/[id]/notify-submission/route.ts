@@ -43,7 +43,7 @@ export async function POST(
       .select(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name)), ' +
-        'tasks:report_tasks(title, status)'
+        'tasks:report_tasks(title, progress_rate)'
       )
       .eq('id', id)
       .single()
@@ -77,9 +77,13 @@ export async function POST(
       workHours: f.work_hours ?? null,
       progressRate: f.progress_rate ?? null,
       title: f.title || null,
-      tasks: (f.tasks || []).map((t: { title: string; status?: string }) => ({
+      tasks: (f.tasks || []).map((t: { title: string; progress_rate?: number }) => ({
         title: t.title,
-        status: t.status,
+        // progress_rate を簡易ステータスに変換 (100=完了 / >0=進行中 / 0=未着手)
+        status:
+          (t.progress_rate ?? 0) >= 100 ? '完了'
+            : (t.progress_rate ?? 0) > 0 ? '進行中'
+            : '未着手',
       })),
       nextDayPlan: f.next_day_plan || null,
       appUrl: process.env.NEXT_PUBLIC_APP_URL,
