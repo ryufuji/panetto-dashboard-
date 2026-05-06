@@ -267,8 +267,21 @@ export async function sendLineWorksMessage(
   return { ok: false, error: 'not_configured' }
 }
 
+export type LineWorksTaskInfo = {
+  title: string
+  status?: string | null
+  description?: string | null
+  progress_rate?: number | null
+  priority?: string | null
+  estimated_hours?: number | null
+  actual_hours?: number | null
+  due_date?: string | null
+}
+
 /**
  * 日報提出通知メッセージを整形する。
+ * タスクごとに「タイトル / 進捗 / 期限 / 詳細(description)」を含めた
+ * 詳しい内容を送る。本文は2000文字でハードカット。
  */
 export function formatReportSubmittedMessage(params: {
   reportId: string
@@ -278,7 +291,7 @@ export function formatReportSubmittedMessage(params: {
   workHours?: number | null
   progressRate?: number | null
   title?: string | null
-  tasks: { title: string; status?: string | null }[]
+  tasks: LineWorksTaskInfo[]
   nextDayPlan?: string | null
   appUrl?: string
 }): string {
@@ -296,6 +309,9 @@ export function formatReportSubmittedMessage(params: {
   } = params
 
   const dateLabel = reportDate.replace(/-/g, '/')
+  const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
+  const priorityLabel = (p?: string | null) =>
+    p === 'high' ? '高' : p === 'low' ? '低' : p === 'medium' ? '中' : null
 
   const lines: string[] = []
   lines.push('📋 業務日報が提出されました')
@@ -318,10 +334,28 @@ export function formatReportSubmittedMessage(params: {
 
   const totalTasks = tasks.length
   const shownTasks = tasks.slice(0, 5)
-  lines.push(`✅ 今日のタスク (${totalTasks}件):`)
+  lines.push(`✅ タスク (${totalTasks}件):`)
   for (const t of shownTasks) {
-    const statusLabel = t.status ? ` [${t.status}]` : ''
-    lines.push(`  ・${t.title}${statusLabel}`)
+    // 1行目: タイトル + ステータス + 進捗 + 優先度
+    const meta: string[] = []
+    if (t.status) meta.push(t.status)
+    if (t.progress_rate !== null && t.progress_rate !== undefined) meta.push(`${t.progress_rate}%`)
+    const pl = priorityLabel(t.priority)
+    if (pl && pl !== '中') meta.push(`優先度:${pl}`)
+    const metaStr = meta.length > 0 ? ` [${meta.join(' / ')}]` : ''
+    lines.push(`  ・${t.title}${metaStr}`)
+
+    // 2行目: 期限と工数
+    const sub: string[] = []
+    if (t.due_date) sub.push(`期限: ${t.due_date}`)
+    if (t.estimated_hours) sub.push(`見積${t.estimated_hours}h`)
+    if (t.actual_hours) sub.push(`実績${t.actual_hours}h`)
+    if (sub.length > 0) lines.push(`     ${sub.join(' / ')}`)
+
+    // 3行目: 詳細(description) があれば 100 文字まで
+    if (t.description && t.description.trim()) {
+      lines.push(`     ${truncate(t.description.trim().replace(/\n/g, ' '), 100)}`)
+    }
   }
   if (totalTasks > shownTasks.length) {
     lines.push(`  ...他${totalTasks - shownTasks.length}件`)
@@ -329,10 +363,9 @@ export function formatReportSubmittedMessage(params: {
   lines.push('')
 
   if (nextDayPlan) {
-    const truncated =
-      nextDayPlan.length > 200 ? nextDayPlan.slice(0, 200) + '…' : nextDayPlan
+    const trim = nextDayPlan.length > 200 ? nextDayPlan.slice(0, 200) + '…' : nextDayPlan
     lines.push('🗓 明日の予定:')
-    lines.push(truncated)
+    lines.push(trim)
     lines.push('')
   }
 

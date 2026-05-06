@@ -43,7 +43,7 @@ export async function POST(
       .select(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name)), ' +
-        'tasks:report_tasks(title, progress_rate)'
+        'tasks:report_tasks(title, description, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
       )
       .eq('id', id)
       .single()
@@ -77,14 +77,26 @@ export async function POST(
       workHours: f.work_hours ?? null,
       progressRate: f.progress_rate ?? null,
       title: f.title || null,
-      tasks: (f.tasks || []).map((t: { title: string; progress_rate?: number }) => ({
-        title: t.title,
-        // progress_rate を簡易ステータスに変換 (100=完了 / >0=進行中 / 0=未着手)
-        status:
-          (t.progress_rate ?? 0) >= 100 ? '完了'
-            : (t.progress_rate ?? 0) > 0 ? '進行中'
-            : '未着手',
-      })),
+      // 親タスクのみを表示対象にし、order_index 昇順で渡す（子タスクは LINE Works では省略）
+      tasks: (f.tasks || [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((t: any) => !t.parent_task_id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((t: any) => ({
+          title: t.title,
+          status:
+            (t.progress_rate ?? 0) >= 100 ? '完了'
+              : (t.progress_rate ?? 0) > 0 ? '進行中'
+              : '未着手',
+          description: t.description,
+          progress_rate: t.progress_rate,
+          priority: t.priority,
+          estimated_hours: t.estimated_hours,
+          actual_hours: t.actual_hours,
+          due_date: t.due_date,
+        })),
       nextDayPlan: f.next_day_plan || null,
       appUrl: process.env.NEXT_PUBLIC_APP_URL,
     })
