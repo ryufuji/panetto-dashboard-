@@ -414,6 +414,7 @@ export default function NewReportPage() {
                       <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => removeTask(child.id)}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                     <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
+                    <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
                     <div className="grid grid-cols-5 gap-2">
                       <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
                       <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>

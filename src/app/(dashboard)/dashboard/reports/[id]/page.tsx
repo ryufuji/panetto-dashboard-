@@ -425,6 +425,9 @@ export default function ReportDetailPage() {
                             {children.map((child: any) => (
                               <div key={child.id} className="rounded border border-dashed p-3">
                                 <p className="font-medium text-sm">{child.title}</p>
+                                {child.description && (
+                                  <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{child.description}</p>
+                                )}
                                 <div className="flex gap-4 text-xs text-muted-foreground mt-1">
                                   <span>見積: {child.estimated_hours || '-'}h</span>
                                   <span>実績: {child.actual_hours || '-'}h</span>

@@ -942,6 +942,7 @@ export default function EditReportPage() {
                       </Button>
                     </div>
                     <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
+                    <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
                     <div className="grid grid-cols-5 gap-2">
                       <div>
                         <Label className="text-xs">見積(h)</Label>
