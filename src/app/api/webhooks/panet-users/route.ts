@@ -46,24 +46,24 @@ interface PanetUser {
 }
 
 // area から拠点(office) を推定
-async function resolveOfficeId(admin: ReturnType<typeof createClient>, area?: string | null): Promise<string | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveOfficeId(admin: any, area?: string | null): Promise<string | null> {
   if (!area) return null
   const a = area.toLowerCase()
-  let code: string | null = null
+  let code: string
   if (a.includes('札幌') || a.includes('sapporo')) code = 'SAPPORO'
   else if (a.includes('福岡') || a.includes('fukuoka')) code = 'FUKUOKA'
   else code = 'TOKYO' // デフォルトは東京
   const { data } = await admin.from('offices').select('id').eq('organization_id', PANETTO_ORG_ID).eq('code', code).maybeSingle()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data as any)?.id || null
+  return data?.id || null
 }
 
 // department 名から部署IDを取得（無ければ NULL）
-async function resolveDepartmentId(admin: ReturnType<typeof createClient>, name?: string | null): Promise<string | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveDepartmentId(admin: any, name?: string | null): Promise<string | null> {
   if (!name) return null
   const { data } = await admin.from('departments').select('id').eq('organization_id', PANETTO_ORG_ID).eq('name', name).maybeSingle()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data as any)?.id || null
+  return data?.id || null
 }
 
 export async function POST(request: NextRequest) {
