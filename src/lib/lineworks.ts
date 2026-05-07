@@ -239,10 +239,10 @@ async function sendViaWebhook(text: string, options?: SendOptions): Promise<Send
 }
 
 /**
- * LINE Works のテキストメッセージは 1 通の上限が比較的低い (おおよそ 1000-2000 字程度)
- * ため、行単位で安全にチャンク分割する。
+ * LINE Works Bot API の text content は 1 メッセージ約 1000 字までの制限があり、
+ * これを超えると 400 で拒否される。安全マージンを取って 900 字でチャンク分割する。
  */
-function splitMessage(text: string, maxLen: number = 1800): string[] {
+function splitMessage(text: string, maxLen: number = 900): string[] {
   if (text.length <= maxLen) return [text]
   const lines = text.split('\n')
   const chunks: string[] = []
@@ -298,9 +298,13 @@ export async function sendLineWorksMessage(
   }
 
   const chunks = splitMessage(text)
+  console.log(`[LINEWORKS] sending ${chunks.length} chunk(s) (total ${text.length} chars)`)
   let lastResult: SendResult = { ok: false, error: 'no_chunks' }
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
+    // 連続送信時のレート制限を避けるため 2 通目以降は短い遅延を入れる
+    if (i > 0) await new Promise(r => setTimeout(r, 300))
+
     let result: SendResult
     if (hasBotCreds) {
       result = await sendViaBotApi(chunk)
@@ -312,8 +316,10 @@ export async function sendLineWorksMessage(
     }
     lastResult = result
     if (!result.ok) {
-      console.error(`[LINEWORKS] chunk ${i + 1}/${chunks.length} failed; aborting remaining chunks`)
-      return result
+      console.error(
+        `[LINEWORKS] chunk ${i + 1}/${chunks.length} failed (chunk len=${chunk.length}); aborting remaining chunks. preview: ${chunk.slice(0, 80).replace(/\n/g, ' / ')}`
+      )
+      return { ...result, error: `chunk_${i + 1}_of_${chunks.length}_failed: ${result.error || ''}` }
     }
   }
   return lastResult
