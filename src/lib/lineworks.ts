@@ -239,9 +239,43 @@ async function sendViaWebhook(text: string, options?: SendOptions): Promise<Send
 }
 
 /**
+ * LINE Works のテキストメッセージは 1 通の上限が比較的低い (おおよそ 1000-2000 字程度)
+ * ため、行単位で安全にチャンク分割する。
+ */
+function splitMessage(text: string, maxLen: number = 1800): string[] {
+  if (text.length <= maxLen) return [text]
+  const lines = text.split('\n')
+  const chunks: string[] = []
+  let current = ''
+  for (const line of lines) {
+    if (line.length > maxLen) {
+      // 単一行が長すぎる場合は強制カット
+      if (current) { chunks.push(current); current = '' }
+      let i = 0
+      while (i < line.length) {
+        chunks.push(line.slice(i, i + maxLen))
+        i += maxLen
+      }
+      continue
+    }
+    const projected = current ? current.length + 1 + line.length : line.length
+    if (projected > maxLen) {
+      if (current) chunks.push(current)
+      current = line
+    } else {
+      current = current ? current + '\n' + line : line
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
+}
+
+/**
  * LINE Works にメッセージを送信する。
  * Bot API 用の環境変数が揃っていれば Bot API、無ければ Webhook URL にフォールバック。
  * どちらも無ければ警告ログを出してスキップ。失敗しても throw しない。
+ *
+ * 長文メッセージは行単位でチャンク分割して順番に送信する（先頭から到着順を保つため逐次送信）。
  */
 export async function sendLineWorksMessage(
   text: string,
@@ -255,16 +289,34 @@ export async function sendLineWorksMessage(
     !!process.env.LINEWORKS_BOT_ID &&
     !!process.env.LINEWORKS_CHANNEL_ID
 
-  if (hasBotCreds) {
-    return sendViaBotApi(text, options)
+  // flexContent モードは分割しない (構造を壊すため)
+  if (options?.flexContent) {
+    if (hasBotCreds) return sendViaBotApi(text, options)
+    if (process.env.LINEWORKS_WEBHOOK_URL) return sendViaWebhook(text, options)
+    console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
+    return { ok: false, error: 'not_configured' }
   }
 
-  if (process.env.LINEWORKS_WEBHOOK_URL) {
-    return sendViaWebhook(text, options)
+  const chunks = splitMessage(text)
+  let lastResult: SendResult = { ok: false, error: 'no_chunks' }
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]
+    let result: SendResult
+    if (hasBotCreds) {
+      result = await sendViaBotApi(chunk)
+    } else if (process.env.LINEWORKS_WEBHOOK_URL) {
+      result = await sendViaWebhook(chunk)
+    } else {
+      console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
+      return { ok: false, error: 'not_configured' }
+    }
+    lastResult = result
+    if (!result.ok) {
+      console.error(`[LINEWORKS] chunk ${i + 1}/${chunks.length} failed; aborting remaining chunks`)
+      return result
+    }
   }
-
-  console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
-  return { ok: false, error: 'not_configured' }
+  return lastResult
 }
 
 export type LineWorksTaskInfo = {
@@ -393,9 +445,13 @@ export function formatReportSubmittedMessage(params: {
     lines.push(`●${t.title}${metaStr}`)
 
     const memo = (t.memo && t.memo.trim()) || (t.description && t.description.trim()) || ''
-    if (memo) lines.push(`メモ：${memo.replace(/\n/g, ' ')}`)
+    if (memo) lines.push(`メモ：${memo}`)
     if (t.due_date) lines.push(`期日：${t.due_date}`)
-    if (t.actual_url && t.actual_url.trim()) lines.push(`証跡：${t.actual_url.trim()}`)
+    if (t.actual_url && t.actual_url.trim()) {
+      // URL を確実にクリッカブルにするため、URL の前を半角空白にする
+      // (LINE Works では「：URL」のように直前が全角文字だと自動リンク化されないことがある)
+      lines.push(`証跡: ${t.actual_url.trim()}`)
+    }
 
     // 子課題は小さなドット
     for (const c of t.children || []) {
@@ -424,9 +480,7 @@ export function formatReportSubmittedMessage(params: {
     }
   }
 
-  const body = lines.join('\n')
-  if (body.length > 2000) {
-    return body.slice(0, 1997) + '...'
-  }
-  return body
+  // データはすべて出力する（メッセージが LINE Works の上限を超える場合は
+  // sendLineWorksMessage 側で自動的に複数メッセージに分割して送信される）
+  return lines.join('\n')
 }
