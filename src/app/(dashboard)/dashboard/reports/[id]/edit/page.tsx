@@ -480,6 +480,9 @@ export default function EditReportPage() {
         })))
 
       // Update report
+      // 注意: work_location / condition / summary / issues / tomorrow_plan は
+      // reports テーブルに存在しないカラムのため UPDATE 対象に含めない
+      // （UI 側の編集状態としてのみ保持。永続化が必要であれば schema 追加要）
       const { error: reportError } = await supabase
         .from('reports')
         .update({
@@ -487,12 +490,7 @@ export default function EditReportPage() {
           title: title || null,
           work_hours: workHours ? parseFloat(workHours) : null,
           progress_rate: computedProgressRate,
-          next_day_plan: nextDayPlan || null,
-          work_location: workLocation || null,
-          condition: condition || null,
-          summary: summary || null,
-          issues: issues || null,
-          tomorrow_plan: tomorrowPlan || null,
+          next_day_plan: tomorrowPlan || nextDayPlan || null,
           status,
           submitted_at: status === 'submitted' ? new Date().toISOString() : null,
           updated_at: new Date().toISOString(),
