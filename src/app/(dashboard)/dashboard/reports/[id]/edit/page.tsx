@@ -1217,7 +1217,7 @@ export default function EditReportPage() {
         </Button>
         <Button onClick={() => handleSubmit('submitted')} disabled={saving}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-          提出して確認依頼
+          提出
         </Button>
       </div>
     </div>
