@@ -641,9 +641,20 @@ export default function EditReportPage() {
       // notify-submission側でlineworks_notified_atをチェックして二重送信を防ぐ）
       if (status === 'submitted' && originalStatus !== 'submitted') {
         try {
-          await fetch(`/api/reports/${id}/notify-submission`, { method: 'POST' })
+          const notifyRes = await fetch(`/api/reports/${id}/notify-submission`, { method: 'POST' })
+          const notifyJson = await notifyRes.json().catch(() => ({}))
+          if (!notifyRes.ok) {
+            console.error('[REPORT_EDIT] notify-submission HTTP error:', notifyRes.status, notifyJson)
+            toast.error(`LINE Works通知に失敗: ${notifyJson.error || notifyJson.detail || `HTTP ${notifyRes.status}`}`)
+          } else if (notifyJson && notifyJson.success === false) {
+            console.error('[REPORT_EDIT] notify-submission send failed:', notifyJson)
+            toast.error(`LINE Works通知に失敗: ${notifyJson.error || 'unknown'}`)
+          } else {
+            console.log('[REPORT_EDIT] notify-submission result:', notifyJson)
+          }
         } catch (notifyErr) {
           console.error('[REPORT_EDIT] notify-submission failed:', notifyErr)
+          toast.error('LINE Works通知でエラーが発生しました')
         }
       }
 
