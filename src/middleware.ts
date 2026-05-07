@@ -18,11 +18,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (hasAuthCookie && pathname === '/login') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // 「ログイン済みなら /login → /dashboard にリダイレクト」のロジックは
+  // クッキーの存在のみで判定するとセッション無効時にリダイレクトループに
+  // なるため middleware では行わない。ログインページ側で本物の getUser() で
+  // 判定し、有効な場合のみ router.push('/dashboard') する。
 
   return NextResponse.next()
 }

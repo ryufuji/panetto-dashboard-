@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,23 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  // 既にログイン済みなら /dashboard へ。session token が無効な場合(削除等)は
+  // 失敗して signOut し、このページに留まる(リダイレクトループ防止)。
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (cancelled) return
+      if (user && !error) {
+        router.replace('/dashboard')
+      } else if (error) {
+        // 無効化された session が残っている場合は明示的にサインアウトしてクッキーを掃除
+        await supabase.auth.signOut().catch(() => {})
+      }
+    })()
+    return () => { cancelled = true }
+  }, [supabase, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
