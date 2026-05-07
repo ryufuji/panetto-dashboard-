@@ -8,11 +8,15 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Bell, LogOut, Settings, User as UserIcon, Menu } from 'lucide-react'
-import type { User } from '@/lib/supabase/types'
+import { LogOut, Settings, User as UserIcon, Menu, ShieldCheck } from 'lucide-react'
+import type { User, Office } from '@/lib/supabase/types'
+
+interface HeaderUser extends User {
+  office?: Office
+}
 
 interface HeaderProps {
-  user: User | null
+  user: HeaderUser | null
   onMenuToggle?: () => void
 }
 
@@ -27,6 +31,10 @@ export function Header({ user, onMenuToggle }: HeaderProps) {
   }
 
   const initials = user?.name?.slice(0, 2) || '?'
+  const officeName = user?.office?.name || ''
+  const positionLabel = user?.position || ''
+  const subtitleParts = [officeName, positionLabel].filter(Boolean).join('/')
+  const isAdmin = user?.role === 'admin'
 
   return (
     <header className="flex h-16 items-center justify-between border-b bg-white px-4 dark:bg-slate-950">
@@ -35,11 +43,25 @@ export function Header({ user, onMenuToggle }: HeaderProps) {
           <Menu className="h-5 w-5" />
         </button>
         <h2 className="text-lg font-semibold">業務日報ダッシュボード</h2>
+        {/* 閲覧用 (氏名/拠点・役職) */}
+        {user && (
+          <span className="hidden md:inline-flex items-center gap-2 rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs">
+            <span className="font-medium">閲覧用</span>
+            <span className="text-emerald-600">
+              {user.name}
+              {subtitleParts && <span className="text-emerald-500"> ({subtitleParts})</span>}
+            </span>
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-        </Button>
+        {isAdmin && (
+          <Button asChild variant="ghost" size="sm" className="text-blue-600">
+            <a href="/dashboard/organization/employees">
+              <ShieldCheck className="mr-1 h-4 w-4" />管理画面
+            </a>
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2 px-2">

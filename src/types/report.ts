@@ -40,7 +40,24 @@ export interface Task {
   parent_id: string | null
   approval: TaskApproval
   deadline_extensions?: DeadlineExtension[]
+  // v2 拡張フィールド (参考UI 互換)
+  purpose?: string                     // 目的・背景
+  memo?: string                        // 備考・メモ
+  actual_url?: string                  // 進行中・実績URL
+  task_status?: string                 // ステータス: 未着手/進行中/完了/保留
+  target_norma_count?: string          // ノルマ目標 (件数)
+  target_norma_amount?: string         // ノルマ目標 (金額)
+  today_result_count?: string          // 今日の成果 (件数)
+  today_result_amount?: string         // 今日の成果 (金額)
+  no_norma?: boolean                   // ノルマなし
+  no_due_date?: boolean                // 期日なし
+  is_recurring?: boolean               // 定期タスク
+  is_omitted?: boolean                 // 省略
+  shared_user_ids?: string[]           // 共有ユーザー (参照のみ)
 }
+
+export const TASK_STATUS_OPTIONS = ['未着手', '進行中', '完了', '保留'] as const
+export type TaskStatus = typeof TASK_STATUS_OPTIONS[number]
 
 export interface PlannedTask {
   id: string

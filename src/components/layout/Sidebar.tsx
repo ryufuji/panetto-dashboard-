@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, FileText, CheckSquare, Store,
   Building2, Settings, ChevronLeft, ChevronRight,
-  Users, ClipboardList, BarChart3
+  Users, ClipboardList, BarChart3, AlertTriangle, Bug
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -16,6 +16,7 @@ const navigation = [
     { name: '日報一覧', href: '/dashboard/reports' },
     { name: '日報作成', href: '/dashboard/reports/new' },
     { name: '下書き', href: '/dashboard/reports/drafts' },
+    { name: '期日遅れタスク', href: '/dashboard/reports/overdue' },
     // テンプレート機能は実装未完了のため一時的に非表示。再開時はこの行のコメントを外す:
     // { name: 'テンプレート', href: '/dashboard/reports/templates' },
     { name: 'ガントチャート', href: '/dashboard/reports/gantt' },
@@ -54,6 +55,7 @@ const navigation = [
     { name: 'システム設定', href: '/dashboard/settings/system' },
     { name: '監査ログ', href: '/dashboard/settings/audit-logs' },
   ]},
+  { name: 'バグ報告', href: '/dashboard/bug-report', icon: Bug },
 ]
 
 export function Sidebar() {
