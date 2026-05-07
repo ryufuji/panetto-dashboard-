@@ -630,9 +630,20 @@ export default function NewReportPage() {
       // 提出時はLINE Worksにも通知（失敗しても保存は成功扱い）
       if (status === 'submitted') {
         try {
-          await fetch(`/api/reports/${report.id}/notify-submission`, { method: 'POST' })
+          const notifyRes = await fetch(`/api/reports/${report.id}/notify-submission`, { method: 'POST' })
+          const notifyJson = await notifyRes.json().catch(() => ({}))
+          if (!notifyRes.ok) {
+            console.error('[REPORT_NEW] notify-submission HTTP error:', notifyRes.status, notifyJson)
+            toast.error(`LINE Works通知に失敗: ${notifyJson.error || notifyJson.detail || `HTTP ${notifyRes.status}`}`)
+          } else if (notifyJson && notifyJson.success === false) {
+            console.error('[REPORT_NEW] notify-submission send failed:', notifyJson)
+            toast.error(`LINE Works通知に失敗: ${notifyJson.error || 'unknown'}`)
+          } else {
+            console.log('[REPORT_NEW] notify-submission result:', notifyJson)
+          }
         } catch (notifyErr) {
           console.error('[REPORT_NEW] notify-submission failed:', notifyErr)
+          toast.error('LINE Works通知でエラーが発生しました')
         }
       }
 

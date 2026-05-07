@@ -43,7 +43,7 @@ export async function POST(
       .select(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
         'start_time, end_time, submitted_at, lineworks_notified_at, ' +
-        'user:users(name, department:departments!users_department_id_fkey(name), office:offices(name)), ' +
+        'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
         'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index), ' +
         'planned_tasks:report_planned_tasks(title, order_index)'
       )
@@ -119,6 +119,7 @@ export async function POST(
       nextDayPlanText: f.next_day_plan || null,
     })
 
+    console.log(`[NOTIFY] Sending message (length=${message.length}) for report ${id}`)
     const result = await sendLineWorksMessage(message)
 
     // 送信成功時にタイムスタンプ記録（再送防止）
@@ -127,6 +128,9 @@ export async function POST(
         .from('reports')
         .update({ lineworks_notified_at: new Date().toISOString() })
         .eq('id', id)
+      console.log(`[NOTIFY] Sent successfully for report ${id}`)
+    } else {
+      console.error(`[NOTIFY] Send failed for report ${id}:`, result)
     }
 
     return NextResponse.json({ success: result.ok, status: result.status, error: result.error })

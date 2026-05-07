@@ -104,7 +104,7 @@ export async function PUT(
           .select(
             'id, report_date, title, work_hours, progress_rate, next_day_plan, ' +
             'start_time, end_time, submitted_at, lineworks_notified_at, ' +
-            'user:users(name, department:departments!users_department_id_fkey(name), office:offices(name)), ' +
+            'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
             'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index), ' +
             'planned_tasks:report_planned_tasks(title, order_index)'
           )
