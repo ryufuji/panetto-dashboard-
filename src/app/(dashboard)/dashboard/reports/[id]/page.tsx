@@ -52,6 +52,7 @@ export default function ReportDetailPage() {
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
   const [commentContent, setCommentContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [sendingComment, setSendingComment] = useState(false)
@@ -115,7 +116,15 @@ export default function ReportDetailPage() {
   useEffect(() => {
     async function getUser() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) setCurrentUserId(user.id)
+      if (user) {
+        setCurrentUserId(user.id)
+        const { data: profile } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        if (profile) setCurrentUserRole((profile as { role: string }).role)
+      }
     }
     getUser()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,6 +246,9 @@ export default function ReportDetailPage() {
   const st = statusMap[report.status] || statusMap.draft
   const parentTasks = (report.tasks || []).filter((t: any) => !t.parent_task_id).sort((a: any, b: any) => a.order_index - b.order_index)
   const isAuthor = currentUserId === report.user_id
+  const isAdmin = currentUserRole === 'admin'
+  const canEdit = isAuthor || isAdmin
+  const canDelete = isAuthor || isAdmin
 
   // Build extension map by report_task_id
   const extensionsByTask = new Map<string, any[]>()
@@ -253,40 +265,45 @@ export default function ReportDetailPage() {
       <div className="flex items-center gap-4">
         <Link href="/dashboard/reports"><Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-4 w-4" />戻る</Button></Link>
 
+        {/* 提出ボタン: draft 状態のときのみ本人に表示 */}
         {report.status === 'draft' && isAuthor && (
-          <>
-            <Link href={`/dashboard/reports/${id}/edit`}>
-              <Button variant="outline" size="sm">
-                <Pencil className="mr-1 h-4 w-4" />編集
-              </Button>
-            </Link>
-            <Button size="sm" onClick={handleSubmitReport} disabled={submitting}>
-              {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowUpRight className="mr-1 h-4 w-4" />}
-              提出
+          <Button size="sm" onClick={handleSubmitReport} disabled={submitting}>
+            {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowUpRight className="mr-1 h-4 w-4" />}
+            提出
+          </Button>
+        )}
+        {/* 編集ボタン: 本人 or admin、status不問 */}
+        {canEdit && (
+          <Link href={`/dashboard/reports/${id}/edit`}>
+            <Button variant="outline" size="sm">
+              <Pencil className="mr-1 h-4 w-4" />編集
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm">
-                  <Trash2 className="mr-1 h-4 w-4" />削除
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>日報を削除しますか？</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    この操作は取り消せません。日報が完全に削除されます。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" onClick={handleDeleteReport} disabled={deleting}>
-                    {deleting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-                    削除する
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </>
+          </Link>
+        )}
+        {/* 削除ボタン: 本人 or admin、status不問 */}
+        {canDelete && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                <Trash2 className="mr-1 h-4 w-4" />削除
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>日報を削除しますか？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  この操作は取り消せません。日報および紐づくタスク・コメント等が完全に削除されます。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={handleDeleteReport} disabled={deleting}>
+                  {deleting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                  削除する
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
 
         <div className="flex-1">

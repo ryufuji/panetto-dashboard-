@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendLineWorksMessage, formatReportSubmittedMessage } from '@/lib/lineworks'
 
@@ -181,7 +182,7 @@ export async function DELETE(
 
     const { data: existing, error: fetchError } = await supabase
       .from('reports')
-      .select('status')
+      .select('status, user_id')
       .eq('id', id)
       .single()
 
@@ -192,14 +193,25 @@ export async function DELETE(
       return NextResponse.json({ error: fetchError.message }, { status: 500 })
     }
 
-    if (existing.status !== 'draft') {
-      return NextResponse.json(
-        { error: 'Only draft reports can be deleted' },
-        { status: 400 }
-      )
+    // 認可: 本人 または admin のみ削除可能
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    const isAuthor = (existing as { user_id: string }).user_id === user.id
+    const isAdmin = (profile as { role: string } | null)?.role === 'admin'
+    if (!isAuthor && !isAdmin) {
+      return NextResponse.json({ error: '削除権限がありません' }, { status: 403 })
     }
 
-    const { error } = await supabase.from('reports').delete().eq('id', id)
+    // Service Role で削除 (RLS をバイパスして admin が他人の日報も削除できるように)
+    const admin = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    )
+    const { error } = await admin.from('reports').delete().eq('id', id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
