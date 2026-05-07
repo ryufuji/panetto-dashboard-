@@ -401,22 +401,42 @@ export default function NewReportPage() {
     if (parentId) {
       setExpandedParents(prev => new Set(prev).add(parentId))
     }
-    setTasks([...tasks, {
-      id: crypto.randomUUID(), title: '', description: '', estimated_hours: '', actual_hours: '',
-      progress_rate: 0, task_type: '', priority: 'medium', start_date: today, due_date: today,
-      task_status: '未着手', purpose: '', memo: '', actual_url: '',
-      target_norma_count: '', target_norma_amount: '', today_result_count: '', today_result_amount: '',
-      no_norma: false, no_due_date: false, is_recurring: false, is_omitted: false, shared_user_ids: [],
-      parent_id: parentId, approval: defaultApproval()
-    }])
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: '',
+      description: '',
+      estimated_hours: '',
+      actual_hours: '',
+      progress_rate: 0,
+      task_type: '',
+      priority: 'medium',
+      start_date: today,
+      due_date: today,
+      task_status: '未着手',
+      purpose: '',
+      memo: '',
+      actual_url: '',
+      target_norma_count: '',
+      target_norma_amount: '',
+      today_result_count: '',
+      today_result_amount: '',
+      no_norma: false,
+      no_due_date: false,
+      is_recurring: false,
+      is_omitted: false,
+      shared_user_ids: [],
+      parent_id: parentId,
+      approval: defaultApproval(),
+    }
+    setTasks(prev => [...prev, newTask])
   }
 
   const removeTask = (id: string) => {
-    setTasks(tasks.filter(t => t.id !== id && t.parent_id !== id))
+    setTasks(prev => prev.filter(t => t.id !== id && t.parent_id !== id))
   }
 
   const updateTask = (id: string, field: string, value: any) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, [field]: value } : t))
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
   }
 
   // 親タスクの進捗率の単純平均（親なし時は0）
@@ -428,7 +448,7 @@ export default function NewReportPage() {
   })()
 
   const updateTaskApproval = (taskId: string, field: string, value: any) => {
-    setTasks(tasks.map(t => {
+    setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t
       const approval = { ...t.approval, [field]: value }
       // Auto-fill title from task name when enabling
@@ -444,7 +464,7 @@ export default function NewReportPage() {
   }
 
   const addApproverToTask = (taskId: string, userId: string) => {
-    setTasks(tasks.map(t => {
+    setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t
       if (t.approval.approvers.includes(userId)) return t
       return { ...t, approval: { ...t.approval, approvers: [...t.approval.approvers, userId] } }
@@ -452,7 +472,7 @@ export default function NewReportPage() {
   }
 
   const removeApproverFromTask = (taskId: string, userId: string) => {
-    setTasks(tasks.map(t => {
+    setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t
       return { ...t, approval: { ...t.approval, approvers: t.approval.approvers.filter(id => id !== userId) } }
     }))
