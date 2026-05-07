@@ -102,9 +102,11 @@ export async function PUT(
         const { data: full } = await supabase
           .from('reports')
           .select(
-            'id, report_date, title, work_hours, progress_rate, next_day_plan, lineworks_notified_at, ' +
-            'user:users(name, department:departments!users_department_id_fkey(name)), ' +
-            'tasks:report_tasks(title, description, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
+            'id, report_date, title, work_hours, progress_rate, next_day_plan, ' +
+            'start_time, end_time, submitted_at, lineworks_notified_at, ' +
+            'user:users(name, department:departments!users_department_id_fkey(name), office:offices(name)), ' +
+            'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index), ' +
+            'planned_tasks:report_planned_tasks(title, order_index)'
           )
           .eq('id', id)
           .single()
@@ -112,35 +114,49 @@ export async function PUT(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const f = full as any
         if (f && !f.lineworks_notified_at) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const allTasks: any[] = f.tasks || []
+          const parentTasks = allTasks
+            .filter((t: any) => !t.parent_task_id)
+            .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const childByParent = new Map<string, any[]>()
+          for (const t of allTasks) {
+            if (!t.parent_task_id) continue
+            const arr = childByParent.get(t.parent_task_id) || []
+            arr.push(t)
+            childByParent.set(t.parent_task_id, arr)
+          }
+          for (const arr of childByParent.values()) {
+            arr.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const plannedSorted = ((f.planned_tasks || []) as any[])
+            .slice()
+            .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+
           const message = formatReportSubmittedMessage({
             reportId: f.id,
             userName: f.user?.name || '不明',
             reportDate: f.report_date,
+            submittedAt: f.submitted_at || null,
+            startTime: f.start_time || null,
+            endTime: f.end_time || null,
+            officeName: f.user?.office?.name || null,
             departmentName: f.user?.department?.name || null,
-            workHours: f.work_hours ?? null,
-            progressRate: f.progress_rate ?? null,
-            title: f.title || null,
-            tasks: (f.tasks || [])
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .filter((t: any) => !t.parent_task_id)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .map((t: any) => ({
-                title: t.title,
-                status:
-                  (t.progress_rate ?? 0) >= 100 ? '完了'
-                    : (t.progress_rate ?? 0) > 0 ? '進行中'
-                    : '未着手',
-                description: t.description,
-                progress_rate: t.progress_rate,
-                priority: t.priority,
-                estimated_hours: t.estimated_hours,
-                actual_hours: t.actual_hours,
-                due_date: t.due_date,
-              })),
-            nextDayPlan: f.next_day_plan || null,
-            appUrl: process.env.NEXT_PUBLIC_APP_URL,
+            tasks: parentTasks.map((t: any) => ({
+              title: t.title,
+              task_status: t.task_status || null,
+              progress_rate: t.progress_rate,
+              estimated_hours: t.estimated_hours,
+              due_date: t.due_date,
+              memo: t.memo || null,
+              description: t.description || null,
+              actual_url: t.actual_url || null,
+              children: (childByParent.get(t.id) || []).map((c: any) => ({ title: c.title })),
+            })),
+            plannedTasks: plannedSorted.map((p: any) => ({ title: p.title })),
+            nextDayPlanText: f.next_day_plan || null,
           })
           const result = await sendLineWorksMessage(message)
           if (result.ok) {

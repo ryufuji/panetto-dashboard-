@@ -269,108 +269,159 @@ export async function sendLineWorksMessage(
 
 export type LineWorksTaskInfo = {
   title: string
-  status?: string | null
-  description?: string | null
+  task_status?: string | null      // 未着手 / 進行中 / 完了 / 保留
   progress_rate?: number | null
-  priority?: string | null
   estimated_hours?: number | null
-  actual_hours?: number | null
   due_date?: string | null
+  memo?: string | null             // 備考・メモ (なければ description でフォールバック)
+  description?: string | null
+  actual_url?: string | null       // 進行中・実績URL (証跡)
+  children?: { title: string }[]   // 子課題タイトルのみ
+}
+
+export type LineWorksPlannedTask = {
+  title: string
 }
 
 /**
- * 日報提出通知メッセージを整形する。
- * タスクごとに「タイトル / 進捗 / 期限 / 詳細(description)」を含めた
- * 詳しい内容を送る。本文は2000文字でハードカット。
+ * 日報提出通知メッセージを整形する (v2: 平氏のフォーマット)
+ *
+ * 例:
+ *   【日報】2026-05-06 平 雅行
+ *
+ *   報告日：2026-05-06 19:47
+ *   勤務時間：10:00-19:47
+ *   氏名：平 雅行
+ *   所属：東京/制作
+ *   業務内容：
+ *
+ *   ●【水戸ハピドリ】指名料チケット2000円(進捗70％/進行中/工数1.5h)
+ *   メモ：修正後確認中
+ *   期日：2026-05-08
+ *   証跡：https://panet.backlog.jp/view/MHD_PJ-2356
+ *
+ *   ========
+ *   明日のタスク
+ *   ・キャストさん名刺作成
+ *   ・タスク整理
+ *
+ * 本文は2000文字でハードカット。
  */
 export function formatReportSubmittedMessage(params: {
   reportId: string
   userName: string
   reportDate: string // YYYY-MM-DD
+  submittedAt?: string | null   // ISO 文字列。なければ現在時刻
+  startTime?: string | null     // HH:MM
+  endTime?: string | null       // HH:MM
+  officeName?: string | null
   departmentName?: string | null
-  workHours?: number | null
-  progressRate?: number | null
-  title?: string | null
   tasks: LineWorksTaskInfo[]
-  nextDayPlan?: string | null
-  appUrl?: string
+  plannedTasks?: LineWorksPlannedTask[]
+  nextDayPlanText?: string | null  // 明日のタスクのフリーテキスト（plannedTasks が無いときのフォールバック）
 }): string {
   const {
-    reportId,
     userName,
     reportDate,
+    submittedAt,
+    startTime,
+    endTime,
+    officeName,
     departmentName,
-    workHours,
-    progressRate,
-    title,
     tasks,
-    nextDayPlan,
-    appUrl,
+    plannedTasks,
+    nextDayPlanText,
   } = params
 
-  const dateLabel = reportDate.replace(/-/g, '/')
-  const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
-  const priorityLabel = (p?: string | null) =>
-    p === 'high' ? '高' : p === 'low' ? '低' : p === 'medium' ? '中' : null
+  // 「報告日：YYYY-MM-DD HH:MM」用に submitted_at を JST で整形
+  const submittedLabel = (() => {
+    const d = submittedAt ? new Date(submittedAt) : new Date()
+    if (isNaN(d.getTime())) return reportDate
+    const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+    const yyyy = jst.getUTCFullYear()
+    const mm = String(jst.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(jst.getUTCDate()).padStart(2, '0')
+    const hh = String(jst.getUTCHours()).padStart(2, '0')
+    const mi = String(jst.getUTCMinutes()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
+  })()
+
+  // 勤務時間
+  const trimSec = (t?: string | null) => (t ? t.slice(0, 5) : '')
+  const workTimeLabel = (() => {
+    const s = trimSec(startTime)
+    const e = trimSec(endTime)
+    if (s && e) return `${s}-${e}`
+    if (s) return `${s}-`
+    if (e) return `-${e}`
+    return ''
+  })()
+
+  // 所属（東京/制作 のように）
+  const affiliationParts = [officeName, departmentName].filter(Boolean) as string[]
+  const affiliation = affiliationParts.join('/')
 
   const lines: string[] = []
-  lines.push('📋 業務日報が提出されました')
-  lines.push('────────────────')
-  lines.push(`👤 提出者: ${userName}`)
-  lines.push(`📅 対象日: ${dateLabel}`)
-  if (departmentName) lines.push(`🏢 部署: ${departmentName}`)
-  if (workHours !== null && workHours !== undefined) {
-    lines.push(`⏱ 稼働時間: ${workHours}h`)
-  }
-  if (progressRate !== null && progressRate !== undefined) {
-    lines.push(`📊 進捗率: ${progressRate}%`)
-  }
+  lines.push(`【日報】${reportDate} ${userName}`)
+  lines.push('')
+  lines.push(`報告日：${submittedLabel}`)
+  if (workTimeLabel) lines.push(`勤務時間：${workTimeLabel}`)
+  lines.push(`氏名：${userName}`)
+  if (affiliation) lines.push(`所属：${affiliation}`)
+  lines.push('業務内容：')
   lines.push('')
 
-  if (title) {
-    lines.push(`📝 タイトル: ${title}`)
-    lines.push('')
+  // 親タスクの繰り返し
+  const statusLabel = (t: LineWorksTaskInfo) => {
+    if (t.task_status) return t.task_status
+    const pr = t.progress_rate ?? 0
+    if (pr >= 100) return '完了'
+    if (pr > 0) return '進行中'
+    return '未着手'
   }
 
-  const totalTasks = tasks.length
-  const shownTasks = tasks.slice(0, 5)
-  lines.push(`✅ タスク (${totalTasks}件):`)
-  for (const t of shownTasks) {
-    // 1行目: タイトル + ステータス + 進捗 + 優先度
+  for (const t of tasks) {
     const meta: string[] = []
-    if (t.status) meta.push(t.status)
-    if (t.progress_rate !== null && t.progress_rate !== undefined) meta.push(`${t.progress_rate}%`)
-    const pl = priorityLabel(t.priority)
-    if (pl && pl !== '中') meta.push(`優先度:${pl}`)
-    const metaStr = meta.length > 0 ? ` [${meta.join(' / ')}]` : ''
-    lines.push(`  ・${t.title}${metaStr}`)
-
-    // 2行目: 期限と工数
-    const sub: string[] = []
-    if (t.due_date) sub.push(`期限: ${t.due_date}`)
-    if (t.estimated_hours) sub.push(`見積${t.estimated_hours}h`)
-    if (t.actual_hours) sub.push(`実績${t.actual_hours}h`)
-    if (sub.length > 0) lines.push(`     ${sub.join(' / ')}`)
-
-    // 3行目: 詳細(description) があれば 100 文字まで
-    if (t.description && t.description.trim()) {
-      lines.push(`     ${truncate(t.description.trim().replace(/\n/g, ' '), 100)}`)
+    if (t.progress_rate !== null && t.progress_rate !== undefined) {
+      meta.push(`進捗${t.progress_rate}％`)
     }
-  }
-  if (totalTasks > shownTasks.length) {
-    lines.push(`  ...他${totalTasks - shownTasks.length}件`)
-  }
-  lines.push('')
+    meta.push(statusLabel(t))
+    if (t.estimated_hours !== null && t.estimated_hours !== undefined) {
+      meta.push(`工数${t.estimated_hours}h`)
+    }
+    const metaStr = meta.length > 0 ? `(${meta.join('/')})` : ''
+    lines.push(`●${t.title}${metaStr}`)
 
-  if (nextDayPlan) {
-    const trim = nextDayPlan.length > 200 ? nextDayPlan.slice(0, 200) + '…' : nextDayPlan
-    lines.push('🗓 明日の予定:')
-    lines.push(trim)
+    const memo = (t.memo && t.memo.trim()) || (t.description && t.description.trim()) || ''
+    if (memo) lines.push(`メモ：${memo.replace(/\n/g, ' ')}`)
+    if (t.due_date) lines.push(`期日：${t.due_date}`)
+    if (t.actual_url && t.actual_url.trim()) lines.push(`証跡：${t.actual_url.trim()}`)
+
+    // 子課題は小さなドット
+    for (const c of t.children || []) {
+      if (c.title && c.title.trim()) lines.push(`・${c.title.trim()}`)
+    }
+
     lines.push('')
   }
 
-  if (appUrl) {
-    lines.push(`🔗 詳細: ${appUrl}/reports/${reportId}`)
+  // 明日のタスク
+  lines.push('========')
+  lines.push('明日のタスク')
+  if (plannedTasks && plannedTasks.length > 0) {
+    for (const p of plannedTasks) {
+      if (p.title && p.title.trim()) lines.push(`・${p.title.trim()}`)
+    }
+  } else if (nextDayPlanText && nextDayPlanText.trim()) {
+    // フリーテキストを行ごとに分解。「・」が無ければ自動付与
+    const items = nextDayPlanText.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    for (const item of items) {
+      if (item.startsWith('・') || item.startsWith('-') || item.startsWith('*')) {
+        lines.push(item)
+      } else {
+        lines.push(`・${item}`)
+      }
+    }
   }
 
   const body = lines.join('\n')
