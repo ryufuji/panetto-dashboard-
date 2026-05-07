@@ -239,10 +239,13 @@ async function sendViaWebhook(text: string, options?: SendOptions): Promise<Send
 }
 
 /**
- * LINE Works Bot API の text content は 1 メッセージ約 1000 字までの制限があり、
- * これを超えると 400 で拒否される。安全マージンを取って 900 字でチャンク分割する。
+ * LINE Works Bot API の text content は 1 メッセージ約 1000 字 / 約 2000 バイト
+ * 程度までの制限があり、これを超えると 400 で拒否される。
+ * 日本語は 1 文字 3 バイト (UTF-8) なので、文字数ではなくバイト数で見ると
+ * すぐに上限に達する。安全マージンを取って 600 字でチャンク分割する
+ * (600 字 ≒ 1800 バイト = 制限の 90%)
  */
-function splitMessage(text: string, maxLen: number = 900): string[] {
+function splitMessage(text: string, maxLen: number = 600): string[] {
   if (text.length <= maxLen) return [text]
   const lines = text.split('\n')
   const chunks: string[] = []
