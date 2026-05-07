@@ -33,6 +33,7 @@ interface PanetUser {
   id: number
   email: string
   display_name: string
+  affiliation?: string | null
   department?: string | null
   position?: string | null
   area?: string | null
@@ -43,6 +44,12 @@ interface PanetUser {
   archived?: boolean | number
   dashboard_login_id?: string
   dashboard_initial_password?: string
+}
+
+// 所属法人が PANET 系か判定
+function isPanetAffiliation(affiliation?: string | null): boolean {
+  if (!affiliation) return false
+  return /panet/i.test(affiliation) || affiliation.includes('PANET')
 }
 
 // area から拠点(office) を推定
@@ -88,6 +95,15 @@ export async function POST(request: NextRequest) {
   const { event, user: pu } = body
   if (!event || !pu?.id) {
     return NextResponse.json({ error: 'event and user.id are required' }, { status: 400 })
+  }
+
+  // ガード: PANET 所属でなければ受信しない
+  // archived イベントは既存レコードを退職処理する必要があるので素通り
+  if (event !== 'user.archived' && !isPanetAffiliation(pu.affiliation)) {
+    return NextResponse.json({
+      skipped: 'not_panet_affiliation',
+      affiliation: pu.affiliation || null,
+    })
   }
 
   const admin = createClient(
