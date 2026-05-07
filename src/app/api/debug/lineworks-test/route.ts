@@ -80,8 +80,7 @@ export async function GET(request: NextRequest) {
       'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
       'start_time, end_time, submitted_at, lineworks_notified_at, ' +
       'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
-      'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index), ' +
-      'planned_tasks:report_planned_tasks(title, order_index)'
+      'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
     )
     .eq('id', reportId)
     .single()
@@ -96,6 +95,13 @@ export async function GET(request: NextRequest) {
       env,
     })
   }
+
+  // planned_tasks は別クエリ (PostgREST FK キャッシュ問題回避)
+  const { data: plannedRows } = await admin
+    .from('report_planned_tasks')
+    .select('title, order_index')
+    .eq('report_id', reportId)
+    .order('order_index', { ascending: true })
 
   const f = report as any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -114,10 +120,7 @@ export async function GET(request: NextRequest) {
   for (const arr of childByParent.values()) {
     arr.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plannedSorted = ((f.planned_tasks || []) as any[])
-    .slice()
-    .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  const plannedSorted = plannedRows || []
 
   let message: string
   try {

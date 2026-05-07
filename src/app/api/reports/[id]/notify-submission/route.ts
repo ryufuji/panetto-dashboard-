@@ -44,8 +44,7 @@ export async function POST(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
         'start_time, end_time, submitted_at, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
-        'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index), ' +
-        'planned_tasks:report_planned_tasks(title, order_index)'
+        'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
       )
       .eq('id', id)
       .single()
@@ -54,6 +53,14 @@ export async function POST(
       console.error('[NOTIFY] Report fetch failed:', { id, error: error?.message, code: error?.code })
       return NextResponse.json({ error: 'Report not found', detail: error?.message }, { status: 404 })
     }
+
+    // PostgREST のスキーマキャッシュ問題で reports → report_planned_tasks の
+    // 埋め込み select が動かないため、別クエリで取得する
+    const { data: plannedRows } = await admin
+      .from('report_planned_tasks')
+      .select('title, order_index')
+      .eq('report_id', id)
+      .order('order_index', { ascending: true })
 
     // 本人のみ（権限チェック）
     if ((report as any).user_id !== user.id) {
@@ -90,10 +97,8 @@ export async function POST(
       arr.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const plannedSorted = ((f.planned_tasks || []) as any[])
-      .slice()
-      .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+    // 別クエリで取得した planned_tasks を使う (上で取得済みで既に order_index 昇順)
+    const plannedSorted = plannedRows || []
 
     const message = formatReportSubmittedMessage({
       reportId: f.id,
