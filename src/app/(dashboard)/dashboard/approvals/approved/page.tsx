@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { displayUserName } from '@/lib/user-display'
 
 /**
  * 承認済み日報一覧
@@ -18,7 +19,7 @@ export default async function ConfirmedReportsPage() {
     .from('reports')
     .select(
       'id, report_date, title, user_id, submitted_at, ' +
-      'user:users(name, department:departments!users_department_id_fkey(name))'
+      'user:users(name, is_active, department:departments!users_department_id_fkey(name))'
     )
     .in('status', ['submitted', 'approved'])
     .order('submitted_at', { ascending: false, nullsFirst: false })
@@ -72,7 +73,7 @@ export default async function ConfirmedReportsPage() {
                     <CheckCircle className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium text-sm">
-                        {r.user?.name || '不明'}
+                        {displayUserName(r.user)}
                         {r.title ? ` - ${r.title}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">

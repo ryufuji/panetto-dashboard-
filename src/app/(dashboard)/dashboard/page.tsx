@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, Eye } from 'lucide-react'
 import Link from 'next/link'
+import { displayUserName } from '@/lib/user-display'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -27,7 +28,7 @@ export default async function DashboardPage() {
     // 提出済み日報を取得（確認状態の判定用）
     supabase
       .from('reports')
-      .select('id, report_date, user_id, submitted_at, user:users(name, department:departments!users_department_id_fkey(name))')
+      .select('id, report_date, user_id, submitted_at, user:users(name, is_active, department:departments!users_department_id_fkey(name))')
       .in('status', ['submitted', 'approved'])
       .order('submitted_at', { ascending: false, nullsFirst: false }),
   ])
@@ -82,7 +83,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase
       .from('reports')
-      .select('id, report_date, status, user:users(name, department:departments!users_department_id_fkey(name))')
+      .select('id, report_date, status, user:users(name, is_active, department:departments!users_department_id_fkey(name))')
       .order('report_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(10),
@@ -224,7 +225,7 @@ export default async function DashboardPage() {
                 <Link key={r.id} href={`/dashboard/reports/${r.id}`}
                   className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
                   <div>
-                    <p className="font-medium text-sm">{r.user?.name || '不明'}</p>
+                    <p className="font-medium text-sm">{displayUserName(r.user)}</p>
                     <p className="text-xs text-muted-foreground">{r.report_date}</p>
                   </div>
                   <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未承認</Badge>
@@ -325,9 +326,9 @@ export default async function DashboardPage() {
                 <Link key={report.id} href={`/dashboard/reports/${report.id}`}
                   className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
                   <div>
-                    <p className="font-medium text-sm">{report.user?.name}</p>
+                    <p className="font-medium text-sm">{displayUserName(report.user)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {report.user?.department?.name} | {report.report_date}
+                      {report.user?.is_active === false ? '—' : (report.user?.department?.name || '—')} | {report.report_date}
                     </p>
                   </div>
                   <Badge variant={

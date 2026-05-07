@@ -7,6 +7,7 @@ import { Plus, FileText, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { SyncTasukaruButton } from '@/components/reports/sync-tasukaru-button'
 import { ReportListFilters } from '@/components/reports/ReportListFilters'
+import { displayUserName } from '@/lib/user-display'
 
 const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   draft: { label: '下書き', variant: 'outline' },
@@ -69,7 +70,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   let reportsQuery = supabase
     .from('reports')
-    .select('id, report_date, title, status, progress_rate, work_hours, user:users(name, department:departments!users_department_id_fkey(name))', { count: 'exact' })
+    .select('id, report_date, title, status, progress_rate, work_hours, user:users(name, is_active, department:departments!users_department_id_fkey(name))', { count: 'exact' })
     .order('report_date', { ascending: false })
     .limit(fetchCap)
 
@@ -129,7 +130,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     merged.push({
       id: r.id,
       report_date: r.report_date,
-      author_name: (r as any).user?.name || '-',
+      author_name: displayUserName((r as any).user, '-'),
       department_or_store: (r as any).user?.department?.name || '-',
       title: r.title || '-',
       status_label: st.label,

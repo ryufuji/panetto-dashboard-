@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Building2, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  // 入力欄は「ログインID または email」を受け付ける
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -39,10 +40,33 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
+    // 入力に @ が含まれていればメール、無ければログインID として扱う
+    let email = identifier.trim()
+    if (!email.includes('@')) {
+      try {
+        const res = await fetch('/api/auth/lookup-login-id', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login_id: email }),
+        })
+        if (!res.ok) {
+          setError('ログインIDまたはパスワードが正しくありません')
+          setLoading(false)
+          return
+        }
+        const json = await res.json()
+        email = json.email
+      } catch {
+        setError('ログインに失敗しました')
+        setLoading(false)
+        return
+      }
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      setError('メールアドレスまたはパスワードが正しくありません')
+      setError('ログインIDまたはパスワードが正しくありません')
       setLoading(false)
     } else {
       router.push('/dashboard')
@@ -58,7 +82,7 @@ export default function LoginPage() {
             <Building2 className="h-8 w-8" />
           </div>
           <CardTitle className="text-2xl">業務日報ダッシュボード</CardTitle>
-          <CardDescription>メールアドレスとパスワードでログイン</CardDescription>
+          <CardDescription>ログインID または メールアドレス でログイン</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -68,15 +92,15 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="identifier">ログインID または メールアドレス</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="email@panetto.co.jp"
-                value={email}
-                onChange={(e) => setEmail(e.target.value.replace(/\s/g, ''))}
+                id="identifier"
+                type="text"
+                placeholder="例: yamada-taro または yamada@panet.co.jp"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value.replace(/\s/g, ''))}
                 required
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
             <div className="space-y-2">
