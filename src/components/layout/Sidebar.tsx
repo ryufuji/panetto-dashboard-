@@ -25,10 +25,10 @@ const navigation = [
     { name: '月次レポート', href: '/dashboard/reports/monthly' },
   ]},
   { name: '承認確認', icon: CheckSquare, children: [
-    { name: '承認待ち', href: '/dashboard/approvals/pending' },
-    { name: '承認済み', href: '/dashboard/approvals/approved' },
-    // 統計ページは不要のため一時非表示。再開時はこの行のコメントを外す:
-    // { name: '統計', href: '/dashboard/approvals/statistics' },
+    // 自分が承認すべき申請 / 自分が処理済みの申請を扱う
+    // (旧 /approvals/* は日報用だったため廃止)
+    { name: '承認待ち', href: '/dashboard/approval-requests?tab=pending_approval' },
+    { name: '承認済み', href: '/dashboard/approval-requests?tab=approved_by_me' },
   ]},
   { name: 'パフォーマンス分析', icon: BarChart3, children: [
     { name: '社員ランキング', href: '/dashboard/performance' },
@@ -111,7 +111,9 @@ export function Sidebar() {
           const activeChildHref = (() => {
             let best: string | null = null
             for (const c of item.children || []) {
-              if (pathname === c.href || pathname.startsWith(c.href + '/')) {
+              // query string (?tab=...) は除いて pathname と比較
+              const cPath = c.href.split('?')[0]
+              if (pathname === cPath || pathname.startsWith(cPath + '/')) {
                 if (!best || c.href.length > best.length) best = c.href
               }
             }

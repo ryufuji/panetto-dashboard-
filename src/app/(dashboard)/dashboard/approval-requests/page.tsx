@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -26,12 +27,20 @@ const CATEGORY_LABELS: Record<string, string> = {
 const TABS = [
   { key: 'all', label: '全て' },
   { key: 'mine', label: '自分の申請' },
-  { key: 'pending_approval', label: '承認待ち' },
+  { key: 'pending_approval', label: '自分が承認すべき' },
+  { key: 'approved_by_me', label: '自分が承認済み' },
 ]
+
+const VALID_TABS = new Set(TABS.map(t => t.key))
 
 export default function ApprovalRequestsPage() {
   const supabase = createClient()
-  const [tab, setTab] = useState('all')
+  const searchParams = useSearchParams()
+  const initialTab = (() => {
+    const t = searchParams.get('tab')
+    return t && VALID_TABS.has(t) ? t : 'all'
+  })()
+  const [tab, setTab] = useState(initialTab)
   const [requests, setRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

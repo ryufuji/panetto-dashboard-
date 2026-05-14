@@ -314,7 +314,7 @@ export default function ReportDetailPage() {
         {reportViews.length > 0 && (
           <Badge variant="outline" className="text-sm flex items-center gap-1 border-emerald-300 text-emerald-700">
             <Eye className="h-3.5 w-3.5" />
-            承認 {reportViews.length}人
+            閲覧 {reportViews.length}人
           </Badge>
         )}
       </div>
@@ -544,7 +544,7 @@ export default function ReportDetailPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              確認者一覧（{reportViews.length}人）
+              閲覧者一覧（{reportViews.length}人）
             </CardTitle>
           </CardHeader>
           <CardContent>

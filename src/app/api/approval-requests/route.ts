@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const status = searchParams.get('status')
-    const tab = searchParams.get('tab') // 'mine' | 'pending_approval' | null (all)
+    const tab = searchParams.get('tab') // 'mine' | 'pending_approval' | 'approved_by_me' | null (all)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
     const offset = (page - 1) * limit
@@ -54,6 +54,19 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ data: [], pagination: { page, per_page: limit, total: 0, total_pages: 0 } })
       }
       query = query.in('id', requestIds).eq('status', 'pending')
+    } else if (tab === 'approved_by_me') {
+      // Requests where this user has approved their step (regardless of overall outcome)
+      const { data: approvedSteps } = await supabase
+        .from('approval_request_steps')
+        .select('request_id')
+        .eq('approver_id', user.id)
+        .eq('status', 'approved')
+
+      const requestIds = approvedSteps?.map(s => s.request_id) || []
+      if (requestIds.length === 0) {
+        return NextResponse.json({ data: [], pagination: { page, per_page: limit, total: 0, total_pages: 0 } })
+      }
+      query = query.in('id', requestIds)
     }
 
     const { data, error, count } = await query.range(offset, offset + limit - 1)

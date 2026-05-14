@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, Eye } from 'lucide-react'
+import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, History } from 'lucide-react'
 import Link from 'next/link'
 import { displayUserName } from '@/lib/user-display'
 
@@ -25,34 +25,19 @@ export default async function DashboardPage() {
     supabase.from('stores').select('*', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('store_daily_report_tasks').select('*', { count: 'exact', head: true }).neq('status', 'done'),
     supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    // 提出済み日報を取得（確認状態の判定用）
+    // 直近の提出済み日報（履歴用に10件）
     supabase
       .from('reports')
-      .select('id, report_date, user_id, submitted_at, user:users(name, is_active, department:departments!users_department_id_fkey(name))')
+      .select('id, report_date, status, submitted_at, user:users(name, is_active, department:departments!users_department_id_fkey(name))')
       .in('status', ['submitted', 'approved'])
-      .order('submitted_at', { ascending: false, nullsFirst: false }),
+      .order('submitted_at', { ascending: false, nullsFirst: false })
+      .limit(10),
   ])
 
-  // 提出済み日報のうち「本人以外の閲覧者がいないもの」=承認待ち を集計
   const submittedReports = submittedReportsRes.data || []
-  const submittedIds = submittedReports.map((r: any) => r.id)
-  const viewedByOther = new Set<string>()
-  if (submittedIds.length > 0) {
-    const { data: views } = await supabase
-      .from('report_views')
-      .select('report_id, user_id')
-      .in('report_id', submittedIds)
-    const ownerMap = new Map<string, string>()
-    for (const r of submittedReports as any[]) ownerMap.set(r.id, r.user_id)
-    for (const v of (views || []) as { report_id: string; user_id: string }[]) {
-      if (ownerMap.get(v.report_id) !== v.user_id) viewedByOther.add(v.report_id)
-    }
-  }
-  const unconfirmedReports = submittedReports.filter((r: any) => !viewedByOther.has(r.id))
 
   const kpis = {
     reports: reportsRes.count || 0,
-    pending: unconfirmedReports.length,
     users: usersRes.count || 0,
     stores: storesRes.count || 0,
     storeTasks: storeTasksRes.count || 0,
@@ -61,15 +46,14 @@ export default async function DashboardPage() {
 
   const stats = [
     { label: '本日の日報', value: kpis.reports, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/reports' },
-    { label: '承認待ち日報', value: kpis.pending, icon: Eye, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/approvals/pending' },
     { label: '承認待ち申請', value: kpis.pendingRequests, icon: ClipboardList, color: 'text-red-600', bg: 'bg-red-50', href: '/dashboard/approval-requests' },
     { label: '在籍人数', value: kpis.users, icon: Users, color: 'text-green-600', bg: 'bg-green-50', href: '/dashboard/organization/employees' },
     { label: '稼働店舗', value: kpis.stores, icon: Store, color: 'text-purple-600', bg: 'bg-purple-50', href: '/dashboard/stores' },
     { label: '店舗タスク', value: kpis.storeTasks, icon: ListTodo, color: 'text-teal-600', bg: 'bg-teal-50', href: '/dashboard/reports' },
   ]
 
-  // 承認待ち日報の直近5件（カード表示用）
-  const recentUnconfirmed = unconfirmedReports.slice(0, 5)
+  // 日報履歴 直近5件（カード表示用）
+  const recentHistory = submittedReports.slice(0, 5)
 
   // Run all remaining queries in parallel
   const [
@@ -207,31 +191,36 @@ export default async function DashboardPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Unconfirmed Reports */}
+        {/* 日報履歴 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
-                <Eye className="h-5 w-5 text-orange-500" />
-                承認待ち日報
+                <History className="h-5 w-5 text-blue-500" />
+                日報履歴
               </CardTitle>
-              <CardDescription>{kpis.pending}件の承認待ち{kpis.pending > 5 ? '（直近5件表示）' : ''}</CardDescription>
+              <CardDescription>直近の提出日報（5件表示）</CardDescription>
             </div>
-            <Link href="/dashboard/approvals/pending" className="text-sm text-blue-600 hover:underline">全て表示</Link>
+            <Link href="/dashboard/reports" className="text-sm text-blue-600 hover:underline">全て表示</Link>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentUnconfirmed.length > 0 ? recentUnconfirmed.map((r: any) => (
+              {recentHistory.length > 0 ? recentHistory.map((r: any) => (
                 <Link key={r.id} href={`/dashboard/reports/${r.id}`}
                   className="flex items-center justify-between rounded-lg border p-3 hover:bg-gray-50 transition-colors">
                   <div>
                     <p className="font-medium text-sm">{displayUserName(r.user)}</p>
                     <p className="text-xs text-muted-foreground">{r.report_date}</p>
                   </div>
-                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">未承認</Badge>
+                  <Badge
+                    variant="outline"
+                    className={r.status === 'approved'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-blue-50 text-blue-700 border-blue-200'}
+                  >{r.status === 'approved' ? '承認済' : '提出済'}</Badge>
                 </Link>
               )) : (
-                <p className="text-sm text-muted-foreground text-center py-4">承認待ちの日報はありません</p>
+                <p className="text-sm text-muted-foreground text-center py-4">提出された日報はまだありません</p>
               )}
             </div>
           </CardContent>
