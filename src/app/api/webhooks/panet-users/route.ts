@@ -52,6 +52,53 @@ function isPanetAffiliation(affiliation?: string | null): boolean {
   return /panet/i.test(affiliation) || affiliation.includes('PANET')
 }
 
+/**
+ * PANET 所属でないユーザーは「タス軽くん」に webhook を転送して
+ * そちらでアカウント作成を行う。環境変数 TASUKARU_WEBHOOK_URL が
+ * 未設定なら no-op で skipped を返す。
+ *
+ * 認可ヘッダは TASUKARU_WEBHOOK_SECRET があればそれを、無ければ
+ * PANET_WEBHOOK_SECRET を再利用する。
+ *
+ * 失敗しても本エンドポイントは throw しない（PANET 側のリトライに任せる）
+ */
+async function forwardToTasukaru(
+  body: { event: string; user: PanetUser }
+): Promise<{ ok: boolean; status?: number; error?: string; skipped?: string }> {
+  const url = process.env.TASUKARU_WEBHOOK_URL
+  if (!url) {
+    return { ok: false, skipped: 'TASUKARU_WEBHOOK_URL_not_set' }
+  }
+  const secret = process.env.TASUKARU_WEBHOOK_SECRET || process.env.PANET_WEBHOOK_SECRET || ''
+  if (!secret) {
+    return { ok: false, error: 'no_secret_configured' }
+  }
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(body),
+      // 5 秒タイムアウト
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error(
+        `[PANET_WEBHOOK→TASUKARU] forward failed status=${res.status} body=${text.slice(0, 300)}`
+      )
+      return { ok: false, status: res.status, error: text.slice(0, 300) }
+    }
+    return { ok: true, status: res.status }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[PANET_WEBHOOK→TASUKARU] forward error: ${msg}`)
+    return { ok: false, error: msg }
+  }
+}
+
 // area から拠点(office) を推定
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveOfficeId(admin: any, area?: string | null): Promise<string | null> {
@@ -97,12 +144,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'event and user.id are required' }, { status: 400 })
   }
 
-  // ガード: PANET 所属でなければ受信しない
+  // ガード: PANET 所属でなければ受信しない → タス軽くんに転送
   // archived イベントは既存レコードを退職処理する必要があるので素通り
   if (event !== 'user.archived' && !isPanetAffiliation(pu.affiliation)) {
+    const forwardResult = await forwardToTasukaru(body)
     return NextResponse.json({
       skipped: 'not_panet_affiliation',
       affiliation: pu.affiliation || null,
+      forwarded_to_tasukaru: forwardResult,
     })
   }
 
@@ -123,7 +172,12 @@ export async function POST(request: NextRequest) {
     // ── event=archived: 退職処理 ──
     if (event === 'user.archived') {
       if (!existing) {
-        return NextResponse.json({ skipped: 'not_found' })
+        // 自前に居ない場合はタス軽くん側にもう一度同じイベントを転送
+        const forwardResult = await forwardToTasukaru(body)
+        return NextResponse.json({
+          skipped: 'not_found_locally',
+          forwarded_to_tasukaru: forwardResult,
+        })
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const userId = (existing as any).id
