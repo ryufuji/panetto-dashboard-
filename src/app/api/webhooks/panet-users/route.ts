@@ -209,6 +209,12 @@ export async function POST(request: NextRequest) {
         role: sbRole,
         is_active: !isArchived,
         hire_date: pu.join_date || null,
+        // panet 統合スキーマ準拠 (Phase 1)
+        panet_display_name: pu.display_name,
+        panet_birth_date: pu.birth_date || null,
+        panet_join_date: pu.join_date || null,
+        panet_affiliation: pu.affiliation || null,
+        panet_synced_at: new Date().toISOString(),
       }).eq('id', userId)
       if (updErr) {
         console.error('[PANET_WEBHOOK] update users error:', updErr.message)
@@ -271,6 +277,12 @@ export async function POST(request: NextRequest) {
       is_active: !isArchived,
       hire_date: pu.join_date || null,
       dashboard_password_changed: false,
+      // panet 統合スキーマ準拠 (Phase 1)
+      panet_display_name: pu.display_name,
+      panet_birth_date: pu.birth_date || null,
+      panet_join_date: pu.join_date || null,
+      panet_affiliation: pu.affiliation || null,
+      panet_synced_at: new Date().toISOString(),
     })
     if (insErr) {
       // 失敗時は auth user も削除してロールバック
