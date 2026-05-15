@@ -802,13 +802,20 @@ export default function NewReportPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>部署 <span className="text-red-500">(*)</span></Label>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
-                <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
+              <Label>部署 <span className="text-xs text-muted-foreground">（任意）</span></Label>
+              <Select value={departmentId} onValueChange={setDepartmentId} disabled={departments.length === 0}>
+                <SelectTrigger>
+                  <SelectValue placeholder={departments.length === 0 ? '未登録' : '選択'} />
+                </SelectTrigger>
                 <SelectContent>
                   {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {departments.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  部署はまだ登録されていません。後から組織管理で追加できます。
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>氏名 <span className="text-red-500">(*)</span></Label>
