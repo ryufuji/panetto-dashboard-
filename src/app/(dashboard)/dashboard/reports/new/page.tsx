@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Clock, Repeat, ArrowRight, ArrowLeft, Download, ClipboardList } from 'lucide-react'
 import { toast } from 'sonner'
-import { type Task, type TaskApproval, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS } from '@/types/report'
+import { type Task, type TaskApproval, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS, RECURRENCE_PATTERNS, recurrenceFires, type RecurrencePattern } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 
@@ -186,6 +186,7 @@ export default function NewReportPage() {
           no_norma: !!t.no_norma,
           no_due_date: !!t.no_due_date,
           is_recurring: !!t.is_recurring,
+          recurrence_pattern: t.recurrence_pattern || undefined,
           is_omitted: !!t.is_omitted,
           shared_user_ids: sharedMap.get(t.id) || [],
         } as Task
@@ -379,11 +380,110 @@ export default function NewReportPage() {
             setDefaultApproverId((dept as any).manager_id)
           }
         }
+
+        // ── 定期タスクの自動取り込み ──
+        // 過去の自分の提出済み日報から is_recurring=true なタスクを集め、
+        // recurrence_pattern が today に該当するものをタイトル重複なしで追加
+        await autoIngestRecurringTasks(user.id)
       }
     }
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** 過去の定期タスクから今日該当分を自動取り込み */
+  const autoIngestRecurringTasks = async (userId: string) => {
+    try {
+      // 直近 100 件程度の自分の提出済み日報を新しい順に取得
+      const { data: pastReports } = await supabase
+        .from('reports')
+        .select('id, report_date')
+        .eq('user_id', userId)
+        .in('status', ['submitted', 'approved'])
+        .order('report_date', { ascending: false })
+        .limit(100)
+      if (!pastReports || pastReports.length === 0) return
+
+      const reportIds = pastReports.map((r: any) => r.id)
+      const dateMap = new Map(pastReports.map((r: any) => [r.id, r.report_date]))
+
+      // is_recurring=true な親タスクのみ取得
+      const { data: recurTasks } = await supabase
+        .from('report_tasks')
+        .select('id, report_id, title, description, estimated_hours, due_date, recurrence_pattern, is_recurring, parent_task_id, purpose, memo, actual_url, target_norma_count, target_norma_amount, no_norma, no_due_date, task_type, priority, start_date')
+        .in('report_id', reportIds)
+        .eq('is_recurring', true)
+        .is('parent_task_id', null)
+      if (!recurTasks || recurTasks.length === 0) return
+
+      // タイトルで重複除去 (最新報告のものを優先)
+      const byTitle = new Map<string, any>()
+      for (const t of recurTasks as any[]) {
+        const key = (t.title || '').trim()
+        if (!key) continue
+        const existing = byTitle.get(key)
+        const dateStr = dateMap.get(t.report_id) as string | undefined
+        if (!existing) {
+          byTitle.set(key, { ...t, _report_date: dateStr })
+        } else {
+          if ((dateStr || '') > (existing._report_date || '')) {
+            byTitle.set(key, { ...t, _report_date: dateStr })
+          }
+        }
+      }
+
+      // 今日の本日タブにすでに同タイトルがあれば追加しない
+      const todayDateStr = today
+      const additions: Task[] = []
+      for (const t of byTitle.values()) {
+        const anchor = (t.due_date as string) || (t._report_date as string) || null
+        if (!recurrenceFires(t.recurrence_pattern, anchor, todayDateStr)) continue
+        additions.push({
+          id: crypto.randomUUID(),
+          title: t.title || '',
+          description: t.description || '',
+          estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '',
+          actual_hours: '',
+          progress_rate: 0,
+          task_type: t.task_type || '',
+          priority: t.priority || 'medium',
+          start_date: todayDateStr,
+          due_date: todayDateStr,
+          parent_id: null,
+          approval: defaultApproval(),
+          task_status: '未着手',
+          purpose: t.purpose || '',
+          memo: t.memo || '',
+          actual_url: t.actual_url || '',
+          target_norma_count: t.target_norma_count != null ? String(t.target_norma_count) : '',
+          target_norma_amount: t.target_norma_amount != null ? String(t.target_norma_amount) : '',
+          today_result_count: '',
+          today_result_amount: '',
+          no_norma: !!t.no_norma,
+          no_due_date: !!t.no_due_date,
+          is_recurring: true,
+          recurrence_pattern: (t.recurrence_pattern as RecurrencePattern) || 'daily',
+          is_omitted: false,
+          shared_user_ids: [],
+        } as Task)
+      }
+
+      if (additions.length === 0) return
+
+      // 既存 tasks state の空タスク (タイトル無し初期値) は置き換え、重複タイトルはスキップ
+      setTasks(prev => {
+        const existingTitles = new Set(prev.filter(t => t.title.trim()).map(t => t.title.trim()))
+        const filteredAdd = additions.filter(a => !existingTitles.has(a.title.trim()))
+        if (filteredAdd.length === 0) return prev
+        // 空の初期タスク (1つだけ・title空) は捨てる
+        const baseline = prev.length === 1 && !prev[0].title.trim() && !prev[0].is_recurring ? [] : prev
+        return [...baseline, ...filteredAdd]
+      })
+      toast.success(`定期タスク ${additions.length} 件を自動取り込みしました`)
+    } catch (err) {
+      console.error('[REPORT_NEW] autoIngestRecurringTasks failed:', err)
+    }
+  }
 
   const getRequiredSteps = (amount: string) => {
     const amountNum = parseFloat(amount)
@@ -555,6 +655,7 @@ export default function NewReportPage() {
           no_norma: !!pt.no_norma,
           no_due_date: !!pt.no_due_date,
           is_recurring: !!pt.is_recurring,
+          recurrence_pattern: pt.is_recurring ? (pt.recurrence_pattern || 'daily') : null,
           is_omitted: !!pt.is_omitted,
         }).select().single()
 
@@ -826,15 +927,43 @@ export default function NewReportPage() {
                 </div>
 
                 {/* 省略 / 定期タスク フラグ */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap">
                   <label className="flex items-center gap-1 text-sm">
                     <input type="checkbox" checked={!!task.is_omitted} onChange={e => updateTask(task.id, 'is_omitted', e.target.checked)} />
                     省略
                   </label>
                   <label className="flex items-center gap-1 text-sm">
-                    <input type="checkbox" checked={!!task.is_recurring} onChange={e => updateTask(task.id, 'is_recurring', e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={!!task.is_recurring}
+                      onChange={e => {
+                        updateTask(task.id, 'is_recurring', e.target.checked)
+                        // ON にしたら初期値 daily を入れる
+                        if (e.target.checked && !task.recurrence_pattern) {
+                          updateTask(task.id, 'recurrence_pattern', 'daily')
+                        }
+                      }}
+                    />
                     <Repeat className="h-3 w-3 inline" />定期タスク
                   </label>
+                  {task.is_recurring && (
+                    <Select
+                      value={task.recurrence_pattern || 'daily'}
+                      onValueChange={v => updateTask(task.id, 'recurrence_pattern', v as RecurrencePattern)}
+                    >
+                      <SelectTrigger className="h-7 w-44 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {RECURRENCE_PATTERNS.map(p => (
+                          <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {task.is_recurring && (
+                    <span className="text-xs text-muted-foreground">
+                      ※ 次回該当日に自動で取り込まれます
+                    </span>
+                  )}
                 </div>
 
                 {/* 備考・メモ */}
