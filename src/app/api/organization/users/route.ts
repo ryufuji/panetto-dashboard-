@@ -109,6 +109,23 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // 双方向同期: department / position の変更を panet に送信 (Phase 2)
+    if (data?.panet_user_id && (updates.position !== undefined || updates.department_id !== undefined)) {
+      const fields: Record<string, string | null> = {}
+      if (updates.position !== undefined) fields.position = updates.position
+      if (updates.department_id !== undefined) {
+        // department_id (UUID) を department name (TEXT) に変換して送信
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const deptName = (data as any).department?.name || null
+        fields.department = deptName
+      }
+      // fire-and-forget (失敗しても本処理は止めない)
+      const { notifyPanetInbound } = await import('@/lib/panet-inbound')
+      notifyPanetInbound(data.panet_user_id, fields).catch((e) =>
+        console.error('[PATCH users] panet inbound notify failed:', e)
+      )
+    }
+
     return NextResponse.json({ data })
   } catch {
     return NextResponse.json(
