@@ -354,6 +354,19 @@ export default function NewReportPage() {
         if ((profile as any).office_id) setAreaId((profile as any).office_id)
         if ((profile as any).department_id) setDepartmentId((profile as any).department_id)
 
+        // 前回設定した業務開始時間を引き継ぐ
+        const { data: lastReport } = await supabase
+          .from('reports')
+          .select('start_time')
+          .eq('user_id', user.id)
+          .in('status', ['submitted', 'approved', 'draft'])
+          .not('start_time', 'is', null)
+          .neq('start_time', '')
+          .order('report_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (lastReport?.start_time) setStartTime(lastReport.start_time)
+
         // 拠点と部署の選択肢
         const [{ data: offs }, { data: depts }] = await Promise.all([
           supabase.from('offices').select('id, name').eq('organization_id', (profile as any).organization_id).eq('is_active', true).order('name'),
