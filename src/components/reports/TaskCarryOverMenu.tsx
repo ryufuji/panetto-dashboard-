@@ -286,7 +286,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
                         <p className="text-sm font-medium truncate">{task.title}</p>
                         <p className="text-xs text-muted-foreground">
                           {task.report_date}
-                          {task.children?.length > 0 && ` / 子課題${task.children.length}件`}
+                          {task.children?.length > 0 && ` / 子タスク${task.children.length}件`}
                         </p>
                       </div>
                     </label>

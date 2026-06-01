@@ -61,7 +61,7 @@ export default function ReportDetailPage() {
   const [extensionActions, setExtensionActions] = useState<Record<string, { comment: string; acting: boolean }>>({})
   const [plannedTasks, setPlannedTasks] = useState<any[]>([])
   const [reportViews, setReportViews] = useState<any[]>([])
-  // 子課題の展開状態
+  // 子タスクの展開状態
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
   const toggleExpand = (parentId: string) =>
     setExpandedParents(prev => {
@@ -435,7 +435,7 @@ export default function ReportDetailPage() {
                           onClick={() => toggleExpand(task.id)}
                         >
                           {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                          子課題 {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
+                          子タスク {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
                         </Button>
                         {expandedParents.has(task.id) && (
                           <div className="mt-2 ml-4 space-y-2 border-l pl-4">

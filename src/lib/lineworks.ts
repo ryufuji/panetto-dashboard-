@@ -337,7 +337,7 @@ export type LineWorksTaskInfo = {
   memo?: string | null             // 備考・メモ (なければ description でフォールバック)
   description?: string | null
   actual_url?: string | null       // 進行中・実績URL (証跡)
-  children?: { title: string }[]   // 子課題タイトルのみ
+  children?: { title: string }[]   // 子タスクタイトルのみ
 }
 
 export type LineWorksPlannedTask = {
@@ -462,7 +462,7 @@ export function formatReportSubmittedMessage(params: {
       lines.push(`証跡: ${t.actual_url.trim()}`)
     }
 
-    // 子課題は小さなドット
+    // 子タスクは小さなドット
     for (const c of t.children || []) {
       if (c.title && c.title.trim()) lines.push(`・${c.title.trim()}`)
     }

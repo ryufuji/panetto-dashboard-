@@ -63,7 +63,7 @@ export default function EditReportPage() {
   const [defaultApproverId, setDefaultApproverId] = useState<string | null>(null)
   const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([])
   const [extensionForms, setExtensionForms] = useState<Record<string, { open: boolean; proposed_due_date: string; reason: string; approver_id: string; submitting: boolean }>>({})
-  // 子課題の展開状態
+  // 子タスクの展開状態
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
   const toggleExpand = (parentId: string) =>
     setExpandedParents(prev => {
@@ -777,10 +777,10 @@ export default function EditReportPage() {
               <div key={task.id} className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <GripVertical className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm font-medium text-muted-foreground">親課題 {i + 1}</span>
+                  <span className="text-sm font-medium text-muted-foreground">親タスク {i + 1}</span>
                   <div className="flex-1" />
                   <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}>
-                    <Plus className="h-3 w-3 mr-1" />子課題
+                    <Plus className="h-3 w-3 mr-1" />子タスク
                   </Button>
                   <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeTask(task.id)}>
                     <Trash2 className="h-3 w-3" />
@@ -928,7 +928,7 @@ export default function EditReportPage() {
                   </div>
                 )}
 
-                {/* 子課題は展開式 */}
+                {/* 子タスクは展開式 */}
                 {children.length > 0 && (
                   <Button
                     type="button"
@@ -938,13 +938,13 @@ export default function EditReportPage() {
                     onClick={() => toggleExpand(task.id)}
                   >
                     {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    子課題 {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
+                    子タスク {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
                   </Button>
                 )}
                 {expandedParents.has(task.id) && children.map((child, j) => (
                   <div key={child.id} className="ml-6 rounded-lg border border-dashed p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">子課題 {j + 1}</span>
+                      <span className="text-xs text-muted-foreground">子タスク {j + 1}</span>
                       <div className="flex-1" />
                       <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => removeTask(child.id)}>
                         <Trash2 className="h-3 w-3" />
