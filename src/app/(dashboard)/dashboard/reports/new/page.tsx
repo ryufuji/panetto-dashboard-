@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      className="ml-1 inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-slate-200 text-xs text-slate-600 hover:bg-slate-300"
+      title={text}
+    >
+      ?
+    </span>
+  )
+}
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +59,18 @@ export default function NewReportPage() {
     setter(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
   }
   const [draftLoading, setDraftLoading] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
+
+  // 稼働時間の自動計算（開始時間・終了時間から）
+  useEffect(() => {
+    if (!startTime || !endTime) return
+    const [sh, sm] = startTime.split(':').map(Number)
+    const [eh, em] = endTime.split(':').map(Number)
+    let diffMin = (eh * 60 + em) - (sh * 60 + sm)
+    if (diffMin < 0) diffMin += 24 * 60  // 日跨ぎ
+    const hours = Math.round(diffMin / 60 * 10) / 10
+    setWorkHours(String(hours))
+  }, [startTime, endTime])
 
   // ───── テンプレートピッカー ──────
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
@@ -856,11 +879,15 @@ export default function NewReportPage() {
       const parentTasks = tasks.filter(t => !t.parent_id && t.title)
       for (let i = 0; i < parentTasks.length; i++) {
         const pt = parentTasks[i]
+        const parentChildren = tasks.filter(t => t.parent_id === pt.id)
+        const estimatedHours = parentChildren.length > 0
+          ? parentChildren.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)
+          : (pt.estimated_hours ? parseFloat(pt.estimated_hours) : null)
         const { data: savedTask } = await supabase.from('report_tasks').insert({
           report_id: report.id,
           title: pt.title,
           description: pt.description || null,
-          estimated_hours: pt.estimated_hours ? parseFloat(pt.estimated_hours) : null,
+          estimated_hours: estimatedHours,
           actual_hours: pt.actual_hours ? parseFloat(pt.actual_hours) : null,
           progress_rate: pt.progress_rate,
           task_type: pt.task_type || null,
@@ -1018,7 +1045,7 @@ export default function NewReportPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>エリア <span className="text-red-500">(*)</span></Label>
+              <Label>エリア <span className="text-red-500">(*)</span><HelpTip text="業務を行った拠点・エリア" /></Label>
               <Select value={areaId} onValueChange={setAreaId}>
                 <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
                 <SelectContent>
@@ -1027,7 +1054,7 @@ export default function NewReportPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>部署 <span className="text-xs text-muted-foreground">（任意）</span></Label>
+              <Label>部署 <span className="text-xs text-muted-foreground">（任意）</span><HelpTip text="所属部署（変更がなければそのまま）" /></Label>
               <Select value={departmentId} onValueChange={setDepartmentId} disabled={departments.length === 0}>
                 <SelectTrigger>
                   <SelectValue placeholder={departments.length === 0 ? '未登録' : '選択'} />
@@ -1043,27 +1070,27 @@ export default function NewReportPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label>氏名 <span className="text-red-500">(*)</span></Label>
+              <Label>氏名 <span className="text-red-500">(*)</span><HelpTip text="日報の作成者名" /></Label>
               <Input value={userName} disabled />
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>日付 <span className="text-red-500">(*)</span></Label>
+              <Label>報告日 <span className="text-red-500">(*)</span><HelpTip text="この日報の対象日付" /></Label>
               <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>タイトル（任意）</Label>
+              <Label>件名（任意）<HelpTip text="日報全体のタイトル（例: 〇〇案件対応）" /></Label>
               <Input placeholder="例: A社商談・資料作成" value={title} onChange={e => setTitle(e.target.value)} />
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>開始 <span className="text-red-500">(*)</span></Label>
+              <Label>開始時間 <span className="text-red-500">(*)</span><HelpTip text="業務を開始した時刻。終了時刻と合わせて稼働時間を自動計算します" /></Label>
               <Input type="time" placeholder="12:30" value={startTime} onChange={e => setStartTime(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>終了 <span className="text-red-500">(*)</span></Label>
+              <Label>終了時間 <span className="text-red-500">(*)</span><HelpTip text="業務を終了した時刻" /></Label>
               <div className="flex items-center gap-2">
                 <Input type="time" placeholder="12:30" value={endTime} onChange={e => setEndTime(e.target.value)} className="flex-1" />
                 <Button type="button" variant="outline" size="sm" onClick={() => setNow(setEndTime)}>
@@ -1074,7 +1101,7 @@ export default function NewReportPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>稼働時間 (h)</Label>
+              <Label>稼働時間 (h)<HelpTip text="開始・終了時刻から自動計算されます（手動修正も可）" /></Label>
               <Input type="number" step="0.5" placeholder="8.0" value={workHours} onChange={e => setWorkHours(e.target.value)} />
             </div>
             <div className="space-y-2">
@@ -1122,13 +1149,19 @@ export default function NewReportPage() {
                   <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}><Plus className="h-3 w-3 mr-1" />子タスク</Button>
                   <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeTask(task.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
-                <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
-                <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
-                {/* タスクメタ: 期日 / 進捗 / ステータス / 工数 */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div>
+                  <Label className="text-xs">タスク名（親）<HelpTip text="この日報で対応した業務内容" /></Label>
+                  <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs">詳細（親）<HelpTip text="業務の詳細・進め方・特記事項" /></Label>
+                  <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
+                </div>
+                {/* タスクメタ: 期日 / 進捗 / ステータス / 工数 / 優先度 */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                   <div>
                     <div className="flex items-center gap-1">
-                      <Label className="text-xs">期日 <span className="text-red-500">(*)</span></Label>
+                      <Label className="text-xs">期日 <span className="text-red-500">(*)</span><HelpTip text="このタスクを完了させる期限" /></Label>
                       <Button type="button" variant="ghost" size="sm" className="h-5 px-1 text-xs" onClick={() => updateTask(task.id, 'due_date', today)}>本日</Button>
                     </div>
                     <Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} disabled={!!task.no_due_date} />
@@ -1137,11 +1170,11 @@ export default function NewReportPage() {
                     </label>
                   </div>
                   <div>
-                    <Label className="text-xs">進捗(%) <span className="text-red-500">(*)</span></Label>
+                    <Label className="text-xs">進捗(%) <span className="text-red-500">(*)</span><HelpTip text="現時点の完了率（0〜100）" /></Label>
                     <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
                   </div>
                   <div>
-                    <Label className="text-xs">ステータス <span className="text-red-500">(*)</span></Label>
+                    <Label className="text-xs">ステータス <span className="text-red-500">(*)</span><HelpTip text="現在の作業状況" /></Label>
                     <Select value={task.task_status || ''} onValueChange={v => updateTask(task.id, 'task_status', v)}>
                       <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
                       <SelectContent>
@@ -1150,14 +1183,32 @@ export default function NewReportPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span></Label>
-                    <Input type="number" step="0.5" placeholder="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
+                    <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="子タスクがある場合は子タスクの合計が自動設定されます。ない場合は見込み時間を入力してください" /></Label>
+                    {children.length > 0 ? (
+                      <div className="flex items-center h-9 px-3 rounded-md border bg-muted/30 text-sm gap-1">
+                        <span className="font-medium">{children.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)}</span>
+                        <span className="text-xs text-muted-foreground">h（子タスク合計）</span>
+                      </div>
+                    ) : (
+                      <Input type="number" step="0.5" placeholder="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs">優先度<HelpTip text="高：今日必ず完了、中：通常、低：余裕があれば" /></Label>
+                    <Select value={task.priority} onValueChange={v => updateTask(task.id, 'priority', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="high">高</SelectItem>
+                        <SelectItem value="medium">中</SelectItem>
+                        <SelectItem value="low">低</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
                 {/* 目的 */}
                 <div className="space-y-1">
-                  <Label className="text-xs">目的</Label>
+                  <Label className="text-xs">目的<HelpTip text="このタスクに取り組む理由・背景・達成したい目標" /></Label>
                   <Textarea placeholder="この課題の目的・背景" value={task.purpose || ''} onChange={e => updateTask(task.id, 'purpose', e.target.value)} rows={2} />
                 </div>
 
@@ -1203,7 +1254,7 @@ export default function NewReportPage() {
 
                 {/* 備考・メモ */}
                 <div className="space-y-1">
-                  <Label className="text-xs">備考・メモ (任意)</Label>
+                  <Label className="text-xs">備考・メモ (任意)<HelpTip text="補足情報・懸念事項・引き継ぎ事項など" /></Label>
                   <Textarea placeholder="備考やメモを入力" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
                 </div>
 
@@ -1246,34 +1297,15 @@ export default function NewReportPage() {
                 {/* ノルマ目標 / 今日の成果 */}
                 {!task.no_norma && (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <div><Label className="text-xs">ノルマ(目標) 件数</Label><Input type="number" placeholder="例: 500" value={task.target_norma_count || ''} onChange={e => updateTask(task.id, 'target_norma_count', e.target.value)} /></div>
-                    <div><Label className="text-xs">ノルマ(目標) 金額</Label><Input type="number" placeholder="例: 500000" value={task.target_norma_amount || ''} onChange={e => updateTask(task.id, 'target_norma_amount', e.target.value)} /></div>
-                    <div><Label className="text-xs">今日の成果 件数</Label><Input type="number" placeholder="例: 250" value={task.today_result_count || ''} onChange={e => updateTask(task.id, 'today_result_count', e.target.value)} /></div>
-                    <div><Label className="text-xs">今日の成果 金額</Label><Input type="number" placeholder="例: 250000" value={task.today_result_amount || ''} onChange={e => updateTask(task.id, 'today_result_amount', e.target.value)} /></div>
+                    <div><Label className="text-xs">ノルマ(目標) 件数<HelpTip text="今日達成すべき目標件数" /></Label><Input type="number" placeholder="例: 500" value={task.target_norma_count || ''} onChange={e => updateTask(task.id, 'target_norma_count', e.target.value)} /></div>
+                    <div><Label className="text-xs">ノルマ(目標) 金額<HelpTip text="今日達成すべき目標金額（円）" /></Label><Input type="number" placeholder="例: 500000" value={task.target_norma_amount || ''} onChange={e => updateTask(task.id, 'target_norma_amount', e.target.value)} /></div>
+                    <div><Label className="text-xs">今日の成果 件数<HelpTip text="今日実際に達成した件数" /></Label><Input type="number" placeholder="例: 250" value={task.today_result_count || ''} onChange={e => updateTask(task.id, 'today_result_count', e.target.value)} /></div>
+                    <div><Label className="text-xs">今日の成果 金額<HelpTip text="今日実際に達成した金額（円）" /></Label><Input type="number" placeholder="例: 250000" value={task.today_result_amount || ''} onChange={e => updateTask(task.id, 'today_result_amount', e.target.value)} /></div>
                   </div>
                 )}
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
                   <input type="checkbox" checked={!!task.no_norma} onChange={e => updateTask(task.id, 'no_norma', e.target.checked)} />ノルマなし
                 </label>
-
-                {/* 既存の見積/実績/優先度/開始日（参照UI互換のため省略可表示） */}
-                <details className="text-sm">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">追加項目（実績h / 優先度 / 開始日）</summary>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
-                    <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} /></div>
-                    <div><Label className="text-xs">優先度</Label>
-                      <Select value={task.priority} onValueChange={v => updateTask(task.id, 'priority', v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="high">高</SelectItem>
-                          <SelectItem value="medium">中</SelectItem>
-                          <SelectItem value="low">低</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div><Label className="text-xs">開始日</Label><Input type="date" value={task.start_date} onChange={e => updateTask(task.id, 'start_date', e.target.value)} /></div>
-                  </div>
-                </details>
 
                 {/* 子タスクは展開式 */}
                 {children.length > 0 && (
@@ -1304,6 +1336,41 @@ export default function NewReportPage() {
                       <div><Label className="text-xs">開始日</Label><Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} /></div>
                       <div><Label className="text-xs">期限</Label><Input type="date" value={child.due_date} onChange={e => updateTask(child.id, 'due_date', e.target.value)} /></div>
                     </div>
+                    {/* 子タスク優先度・ステータス */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">ステータス</Label>
+                        <Select value={child.task_status || ''} onValueChange={v => updateTask(child.id, 'task_status', v)}>
+                          <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
+                          <SelectContent>
+                            {TASK_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">優先度 <HelpTip text="高：今日必ず完了、中：通常、低：余裕があれば" /></Label>
+                        <Select value={child.priority} onValueChange={v => updateTask(child.id, 'priority', v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="high">高</SelectItem>
+                            <SelectItem value="medium">中</SelectItem>
+                            <SelectItem value="low">低</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    {/* 子タスクノルマ */}
+                    {!child.no_norma && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div><Label className="text-xs">ノルマ(目標) 件数</Label><Input type="number" placeholder="例: 500" value={child.target_norma_count || ''} onChange={e => updateTask(child.id, 'target_norma_count', e.target.value)} /></div>
+                        <div><Label className="text-xs">ノルマ(目標) 金額</Label><Input type="number" placeholder="例: 500000" value={child.target_norma_amount || ''} onChange={e => updateTask(child.id, 'target_norma_amount', e.target.value)} /></div>
+                        <div><Label className="text-xs">今日の成果 件数</Label><Input type="number" placeholder="例: 250" value={child.today_result_count || ''} onChange={e => updateTask(child.id, 'today_result_count', e.target.value)} /></div>
+                        <div><Label className="text-xs">今日の成果 金額</Label><Input type="number" placeholder="例: 250000" value={child.today_result_amount || ''} onChange={e => updateTask(child.id, 'today_result_amount', e.target.value)} /></div>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <input type="checkbox" checked={!!child.no_norma} onChange={e => updateTask(child.id, 'no_norma', e.target.checked)} />ノルマなし
+                    </label>
                   </div>
                 ))}
 
@@ -1454,7 +1521,7 @@ export default function NewReportPage() {
       {activeTab === 'tomorrow' && (
       <>
       <Card>
-        <CardHeader><CardTitle>翌日以降の予定</CardTitle></CardHeader>
+        <CardHeader><CardTitle>翌日以降の予定<HelpTip text="明日以降に予定している業務・引き継ぎタスク" /></CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {/* クイック追加ボタン */}
           <div className="flex flex-wrap gap-2">
@@ -1582,12 +1649,82 @@ export default function NewReportPage() {
           <Button variant="outline" onClick={() => handleSubmit('draft')} disabled={loading}>
             <Save className="mr-2 h-4 w-4" />下書き保存
           </Button>
-          <Button onClick={() => handleSubmit('submitted')} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700">
+          <Button onClick={() => setShowSummary(true)} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700">
             <Send className="mr-2 h-4 w-4" />送信する
           </Button>
         </div>
       </div>
       </>
+      )}
+
+      {/* ── 送信前サマリ確認モーダル ── */}
+      {showSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="font-semibold text-lg">送信内容の確認</h2>
+              <button onClick={() => setShowSummary(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+              {/* 基本情報 */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <h3 className="font-medium text-sm text-muted-foreground">基本情報</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-muted-foreground">報告日：</span>{reportDate}</div>
+                  <div><span className="text-muted-foreground">担当者：</span>{userName}</div>
+                  <div><span className="text-muted-foreground">開始：</span>{startTime || '未入力'}</div>
+                  <div><span className="text-muted-foreground">終了：</span>{endTime || '未入力'}</div>
+                  <div><span className="text-muted-foreground">稼働時間：</span>{workHours ? `${workHours}h` : '未入力'}</div>
+                  <div><span className="text-muted-foreground">件名：</span>{title || '（未入力）'}</div>
+                </div>
+              </div>
+              {/* タスク一覧 */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <h3 className="font-medium text-sm text-muted-foreground">タスク一覧（{tasks.filter(t => !t.parent_id && t.title).length}件）</h3>
+                {tasks.filter(t => !t.parent_id && t.title).map((task, i) => {
+                  const taskChildren = tasks.filter(t => t.parent_id === task.id)
+                  return (
+                    <div key={task.id} className="text-sm border-l-2 border-blue-200 pl-3 space-y-1">
+                      <div className="font-medium">{i + 1}. {task.title}</div>
+                      <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+                        <span>進捗: {task.progress_rate}%</span>
+                        <span>ステータス: {task.task_status}</span>
+                        <span>工数: {taskChildren.length > 0 ? taskChildren.reduce((s, c) => s + (parseFloat(c.estimated_hours) || 0), 0) : (task.estimated_hours || 0)}h</span>
+                        <span>優先度: {task.priority === 'high' ? '高' : task.priority === 'low' ? '低' : '中'}</span>
+                      </div>
+                      {taskChildren.filter(c => c.title).map((c, j) => (
+                        <div key={c.id} className="ml-4 text-xs text-muted-foreground">
+                          {i + 1}-{j + 1}. {c.title}（{c.progress_rate}% / {c.estimated_hours || 0}h）
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+              {/* 翌日以降の予定 */}
+              {plannedTasks.filter(p => p.title).length > 0 && (
+                <div className="rounded-lg border p-4 space-y-2">
+                  <h3 className="font-medium text-sm text-muted-foreground">翌日以降の予定</h3>
+                  {plannedTasks.filter(p => p.title).map((p, i) => (
+                    <div key={p.id} className="text-sm">{i + 1}. {p.title}{p.estimated_hours ? ` (${p.estimated_hours}h)` : ''}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 justify-end px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => setShowSummary(false)}>修正する</Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                disabled={loading}
+                onClick={() => { setShowSummary(false); handleSubmit('submitted') }}
+              >
+                <Send className="mr-2 h-4 w-4" />このまま送信する
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── テンプレートピッカー モーダル ── */}
