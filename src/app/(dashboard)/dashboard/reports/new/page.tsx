@@ -394,6 +394,10 @@ export default function NewReportPage() {
           }
         }
 
+        // ── 未完了タスクの自動引き継ぎ（前回提出日報） ──
+        // 定期タスクより先に実行し、重複タイトルを定期タスク側でスキップさせる
+        await autoIngestIncompleteTasks(user.id)
+
         // ── 定期タスクの自動取り込み ──
         // 過去の自分の提出済み日報から is_recurring=true なタスクを集め、
         // recurrence_pattern が today に該当するものをタイトル重複なしで追加
@@ -403,6 +407,123 @@ export default function NewReportPage() {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** 前回提出済み日報の未完了タスク（進捗 < 100）を自動引き継ぎ */
+  const autoIngestIncompleteTasks = async (userId: string) => {
+    try {
+      // 最新の提出済み日報を1件取得
+      const { data: lastReports } = await supabase
+        .from('reports')
+        .select('id, report_date')
+        .eq('user_id', userId)
+        .in('status', ['submitted', 'approved'])
+        .order('report_date', { ascending: false })
+        .limit(1)
+      if (!lastReports || lastReports.length === 0) return
+
+      const lastReport = lastReports[0]
+
+      // その日報の全タスクを取得
+      const { data: allTasks } = await supabase
+        .from('report_tasks')
+        .select('*')
+        .eq('report_id', lastReport.id)
+        .order('order_index', { ascending: true })
+      if (!allTasks || allTasks.length === 0) return
+
+      // 未完了の親タスクのみ対象
+      const parentTasks = (allTasks as any[]).filter(
+        t => !t.parent_task_id && (t.progress_rate ?? 0) < 100 && t.task_status !== '完了'
+      )
+      if (parentTasks.length === 0) return
+
+      const additions: Task[] = []
+      for (const t of parentTasks) {
+        const parentLocalId = crypto.randomUUID()
+        additions.push({
+          id: parentLocalId,
+          title: t.title || '',
+          description: t.description || '',
+          estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '',
+          actual_hours: '',
+          progress_rate: t.progress_rate ?? 0,
+          task_type: t.task_type || '',
+          priority: t.priority || 'medium',
+          start_date: today,
+          due_date: t.due_date && t.due_date >= today ? t.due_date : today,
+          parent_id: null,
+          approval: defaultApproval(),
+          task_status: t.task_status || '未着手',
+          purpose: t.purpose || '',
+          memo: t.memo || '',
+          actual_url: t.actual_url || '',
+          target_norma_count: t.target_norma_count != null ? String(t.target_norma_count) : '',
+          target_norma_amount: t.target_norma_amount != null ? String(t.target_norma_amount) : '',
+          today_result_count: '',
+          today_result_amount: '',
+          no_norma: !!t.no_norma,
+          no_due_date: !!t.no_due_date,
+          is_recurring: !!t.is_recurring,
+          recurrence_pattern: t.recurrence_pattern || undefined,
+          is_omitted: false,
+          shared_user_ids: [],
+        } as Task)
+
+        // 子タスクも引き継ぐ（未完了のものに限る）
+        const children = (allTasks as any[]).filter(
+          c => c.parent_task_id === t.id && (c.progress_rate ?? 0) < 100 && c.task_status !== '完了'
+        )
+        for (const c of children) {
+          additions.push({
+            id: crypto.randomUUID(),
+            title: c.title || '',
+            description: c.description || '',
+            estimated_hours: c.estimated_hours != null ? String(c.estimated_hours) : '',
+            actual_hours: '',
+            progress_rate: c.progress_rate ?? 0,
+            task_type: c.task_type || '',
+            priority: c.priority || 'medium',
+            start_date: today,
+            due_date: c.due_date && c.due_date >= today ? c.due_date : today,
+            parent_id: parentLocalId,
+            approval: defaultApproval(),
+            task_status: c.task_status || '未着手',
+            purpose: c.purpose || '',
+            memo: c.memo || '',
+            actual_url: c.actual_url || '',
+            target_norma_count: c.target_norma_count != null ? String(c.target_norma_count) : '',
+            target_norma_amount: c.target_norma_amount != null ? String(c.target_norma_amount) : '',
+            today_result_count: '',
+            today_result_amount: '',
+            no_norma: !!c.no_norma,
+            no_due_date: !!c.no_due_date,
+            is_recurring: false,
+            is_omitted: false,
+            shared_user_ids: [],
+          } as Task)
+        }
+      }
+
+      if (additions.length === 0) return
+
+      setTasks(prev => {
+        const existingTitles = new Set(prev.filter(t => t.title.trim() && !t.parent_id).map(t => t.title.trim()))
+        const parentAdditions = additions.filter(a => !a.parent_id && !existingTitles.has(a.title.trim()))
+        if (parentAdditions.length === 0) return prev
+        // 追加する親タスクのローカルIDセット
+        const addedParentIds = new Set(parentAdditions.map(a => a.id))
+        // 対応する子タスクも含める
+        const childAdditions = additions.filter(a => a.parent_id && addedParentIds.has(a.parent_id))
+        const baseline = prev.length === 1 && !prev[0].title.trim() ? [] : prev
+        return [...baseline, ...parentAdditions, ...childAdditions]
+      })
+
+      const parentCount = additions.filter(a => !a.parent_id).length
+      toast.success(`未完了タスク ${parentCount} 件を前回日報から引き継ぎました`)
+    } catch (err) {
+      console.error('[REPORT_NEW] autoIngestIncompleteTasks failed:', err)
+    }
+  }
 
   /** 過去の定期タスクから今日該当分を自動取り込み */
   const autoIngestRecurringTasks = async (userId: string) => {
