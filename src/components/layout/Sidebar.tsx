@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, FileText, CheckSquare, Store,
   Building2, Settings, ChevronLeft, ChevronRight,
-  Users, ClipboardList, BarChart3, AlertTriangle, Bug
+  Users, ClipboardList, BarChart3, AlertTriangle, Bug, LayoutTemplate
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -49,6 +49,7 @@ const navigation = [
     { name: '拠点管理', href: '/dashboard/organization/offices' },
     { name: '社員管理', href: '/dashboard/organization/employees' },
     { name: '権限管理', href: '/dashboard/organization/permissions' },
+    { name: 'タスクテンプレート', href: '/dashboard/organization/task-templates', icon: LayoutTemplate },
   ]},
   { name: '設定', icon: Settings, children: [
     { name: 'プロフィール', href: '/dashboard/settings/profile' },

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Clock, Repeat, ArrowRight, ArrowLeft, Download, ClipboardList } from 'lucide-react'
+import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Clock, Repeat, ArrowRight, ArrowLeft, Download, ClipboardList, LayoutTemplate } from 'lucide-react'
 import { toast } from 'sonner'
 import { type Task, type TaskApproval, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS, RECURRENCE_PATTERNS, recurrenceFires, type RecurrencePattern } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
@@ -48,6 +48,97 @@ export default function NewReportPage() {
     setter(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
   }
   const [draftLoading, setDraftLoading] = useState(false)
+
+  // ───── テンプレートピッカー ──────
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [templateList, setTemplateList] = useState<any[]>([])
+  const [templateLoading, setTemplateLoading] = useState(false)
+
+  const openTemplatePicker = async () => {
+    setShowTemplatePicker(true)
+    if (templateList.length > 0) return
+    setTemplateLoading(true)
+    try {
+      const res = await fetch('/api/organization/task-templates')
+      const json = await res.json()
+      setTemplateList(json.data || [])
+    } catch {
+      toast.error('テンプレートの取得に失敗しました')
+    } finally {
+      setTemplateLoading(false)
+    }
+  }
+
+  const applyTemplate = (tmpl: any) => {
+    const parentItems = (tmpl.items || []).filter((i: any) => !i.parent_item_id)
+    const additions: Task[] = []
+    for (const p of parentItems) {
+      const parentLocalId = crypto.randomUUID()
+      additions.push({
+        id: parentLocalId,
+        title: p.title || '',
+        description: '',
+        estimated_hours: p.estimated_hours != null ? String(p.estimated_hours) : '',
+        actual_hours: '',
+        progress_rate: 0,
+        task_type: p.task_type || '',
+        priority: p.priority || 'medium',
+        start_date: today,
+        due_date: today,
+        parent_id: null,
+        approval: defaultApproval(),
+        task_status: '未着手',
+        purpose: p.purpose || '',
+        memo: p.memo || '',
+        actual_url: '',
+        target_norma_count: '',
+        target_norma_amount: '',
+        today_result_count: '',
+        today_result_amount: '',
+        no_norma: false,
+        no_due_date: false,
+        is_recurring: false,
+        is_omitted: false,
+        shared_user_ids: [],
+      } as Task)
+      const children = (tmpl.items || []).filter((i: any) => i.parent_item_id === p.id)
+      for (const c of children) {
+        additions.push({
+          id: crypto.randomUUID(),
+          title: c.title || '',
+          description: '',
+          estimated_hours: c.estimated_hours != null ? String(c.estimated_hours) : '',
+          actual_hours: '',
+          progress_rate: 0,
+          task_type: c.task_type || '',
+          priority: c.priority || 'medium',
+          start_date: today,
+          due_date: today,
+          parent_id: parentLocalId,
+          approval: defaultApproval(),
+          task_status: '未着手',
+          purpose: c.purpose || '',
+          memo: c.memo || '',
+          actual_url: '',
+          target_norma_count: '',
+          target_norma_amount: '',
+          today_result_count: '',
+          today_result_amount: '',
+          no_norma: false,
+          no_due_date: false,
+          is_recurring: false,
+          is_omitted: false,
+          shared_user_ids: [],
+        } as Task)
+      }
+    }
+    setTasks(prev => {
+      const baseline = prev.length === 1 && !prev[0].title.trim() ? [] : prev
+      return [...baseline, ...additions]
+    })
+    setShowTemplatePicker(false)
+    toast.success(`テンプレート「${tmpl.name}」を追加しました`)
+  }
 
   // 提出履歴 / 期日遅れタスク（翌日タブで表示）
   const [submittedHistory, setSubmittedHistory] = useState<Array<{ id: string; report_date: string; title: string | null; status: string }>>([])
@@ -1010,6 +1101,9 @@ export default function NewReportPage() {
           <CardTitle>タスク一覧</CardTitle>
           <div className="flex gap-2">
             <TaskCarryOverMenu tasks={tasks} setTasks={setTasks} />
+            <Button variant="outline" size="sm" onClick={openTemplatePicker}>
+              <LayoutTemplate className="mr-1 h-4 w-4" />テンプレート
+            </Button>
             <Button variant="outline" size="sm" onClick={() => addTask(null)}>
               <Plus className="mr-1 h-4 w-4" />親タスク追加
             </Button>
@@ -1494,6 +1588,67 @@ export default function NewReportPage() {
         </div>
       </div>
       </>
+      )}
+
+      {/* ── テンプレートピッカー モーダル ── */}
+      {showTemplatePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h2 className="font-semibold flex items-center gap-2">
+                <LayoutTemplate className="h-4 w-4 text-blue-600" />テンプレートを選択
+              </h2>
+              <button onClick={() => setShowTemplatePicker(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              {templateLoading && <p className="text-center text-muted-foreground py-8">読み込み中...</p>}
+              {!templateLoading && templateList.length === 0 && (
+                <p className="text-center text-muted-foreground py-8">
+                  テンプレートが登録されていません。<br />
+                  管理者が「組織管理 &gt; タスクテンプレート」から作成できます。
+                </p>
+              )}
+              {templateList.map(tmpl => {
+                const parents = (tmpl.items || []).filter((i: any) => !i.parent_item_id)
+                return (
+                  <button
+                    key={tmpl.id}
+                    onClick={() => applyTemplate(tmpl)}
+                    className="w-full text-left rounded-lg border p-4 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium">{tmpl.name}</span>
+                      <span className="text-xs text-muted-foreground">親タスク {parents.length} 件</span>
+                    </div>
+                    {tmpl.description && (
+                      <p className="text-xs text-muted-foreground mb-2">{tmpl.description}</p>
+                    )}
+                    <ul className="space-y-0.5">
+                      {parents.slice(0, 5).map((p: any) => {
+                        const children = (tmpl.items || []).filter((i: any) => i.parent_item_id === p.id)
+                        return (
+                          <li key={p.id} className="text-xs text-slate-600">
+                            ▸ {p.title}{p.estimated_hours != null ? ` (${p.estimated_hours}h)` : ''}
+                            {children.length > 0 && (
+                              <span className="ml-1 text-slate-400">
+                                — 子タスク {children.length} 件
+                              </span>
+                            )}
+                          </li>
+                        )
+                      })}
+                      {parents.length > 5 && (
+                        <li className="text-xs text-muted-foreground">他 {parents.length - 5} 件...</li>
+                      )}
+                    </ul>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
