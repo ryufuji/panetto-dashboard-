@@ -56,7 +56,7 @@ const navigation = [
     { name: 'システム設定', href: '/dashboard/settings/system' },
     { name: '監査ログ', href: '/dashboard/settings/audit-logs' },
   ]},
-  { name: 'バグ報告', href: '/dashboard/bug-report', icon: Bug },
+  { name: 'バグ報告', href: 'https://docs.google.com/spreadsheets/d/1j7C9Rhs8tWsxECq7BoNdyF0Nb2KfRRh47qeMDSllwl4/edit?gid=762673576#gid=762673576', icon: Bug, external: true },
 ]
 
 export function Sidebar() {
@@ -91,9 +91,12 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
         {navigation.map((item) => {
           if (item.href) {
-            const isActive = pathname === item.href
+            const isActive = !item.external && pathname === item.href
+            const linkProps = item.external
+              ? { target: '_blank', rel: 'noopener noreferrer' }
+              : {}
             return (
-              <Link key={item.name} href={item.href}
+              <Link key={item.name} href={item.href} {...linkProps}
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   isActive ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
