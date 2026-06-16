@@ -60,7 +60,7 @@
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted-foreground: oklch(0.60 0.016 285.938);
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
@@ -122,5 +122,11 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* 入力済みフィールドに薄い背景をつけて未入力と区別しやすくする */
+  input:not(:placeholder-shown):not([type="checkbox"]):not([type="radio"]):not([type="date"]),
+  textarea:not(:placeholder-shown) {
+    background-color: oklch(0.97 0.005 250 / 0.6);
+    border-color: oklch(0.75 0.01 250);
   }
 }
