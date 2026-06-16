@@ -1137,14 +1137,28 @@ export default function NewReportPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* 定期タスクが自動追加された場合のインフォバナー */}
+          {tasks.some(t => t.is_recurring && !t.parent_id) && (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <Repeat className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                定期タスクが自動で追加されています（<span className="font-semibold">「定期」</span>バッジが目印）。手動での引き継ぎは不要です。
+              </span>
+            </div>
+          )}
           {parentTasks.map((task, i) => {
             const children = tasks.filter(t => t.parent_id === task.id)
             const requiredSteps = getRequiredSteps(task.approval.amount)
             return (
-              <div key={task.id} className="rounded-lg border p-4 space-y-3">
+              <div key={task.id} className={`rounded-lg border p-4 space-y-3 ${task.is_recurring ? 'border-emerald-200 bg-emerald-50/30' : ''}`}>
                 <div className="flex items-center gap-2">
                   <GripVertical className="h-4 w-4 text-gray-400" />
                   <span className="text-sm font-medium text-muted-foreground">親タスク {i + 1}</span>
+                  {task.is_recurring && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      <Repeat className="h-3 w-3" />定期
+                    </span>
+                  )}
                   <div className="flex-1" />
                   <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}><Plus className="h-3 w-3 mr-1" />子タスク</Button>
                   <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeTask(task.id)}><Trash2 className="h-3 w-3" /></Button>
