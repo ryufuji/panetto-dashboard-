@@ -1521,10 +1521,22 @@ export default function NewReportPage() {
               </div>
             )
           })}
+          {/* タスクリスト下部の親タスク追加ボタン（スクロールせずに追加できるように） */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full border-dashed text-muted-foreground hover:text-foreground"
+            onClick={() => addTask(null)}
+          >
+            <Plus className="mr-1 h-4 w-4" />親タスク追加
+          </Button>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
+      <div className="flex justify-between gap-3">
+        <Button variant="outline" onClick={() => handleSubmit('draft')} disabled={loading}>
+          <Save className="mr-2 h-4 w-4" />下書き保存
+        </Button>
         <Button onClick={() => setActiveTab('tomorrow')} className="bg-emerald-600 hover:bg-emerald-700">
           次へ：翌日以降の予定を入力 <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
