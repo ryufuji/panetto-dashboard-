@@ -545,9 +545,9 @@ export default function NewReportPage() {
         .order('order_index', { ascending: true })
       if (!allTasks || allTasks.length === 0) return
 
-      // 未完了の親タスクのみ対象
+      // 未完了の親タスクのみ対象（定期タスクは autoIngestRecurringTasks が担当するため除外）
       const parentTasks = (allTasks as any[]).filter(
-        t => !t.parent_task_id && (t.progress_rate ?? 0) < 100 && t.task_status !== '完了'
+        t => !t.parent_task_id && (t.progress_rate ?? 0) < 100 && t.task_status !== '完了' && !t.is_recurring
       )
       if (parentTasks.length === 0) return
 
@@ -684,7 +684,8 @@ export default function NewReportPage() {
       const todayDateStr = today
       const additions: Task[] = []
       for (const t of byTitle.values()) {
-        const anchor = (t.due_date as string) || (t._report_date as string) || null
+        // anchor は日報の提出日を優先（due_dateはデフォルト当日のためanchor=today になり発火しないケースを防ぐ）
+        const anchor = (t._report_date as string) || (t.due_date as string) || null
         if (!recurrenceFires(t.recurrence_pattern, anchor, todayDateStr)) continue
         additions.push({
           id: crypto.randomUUID(),
