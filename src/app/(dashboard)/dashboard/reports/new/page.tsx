@@ -20,11 +20,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Clock, Repeat, ArrowRight, ArrowLeft, Download, ClipboardList, LayoutTemplate } from 'lucide-react'
+import { Plus, Trash2, Save, Send, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Clock, Repeat, ArrowRight, ArrowLeft, Download, ClipboardList, LayoutTemplate, History, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { type Task, type TaskApproval, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS, RECURRENCE_PATTERNS, recurrenceFires, type RecurrencePattern } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const APPROVAL_CATEGORIES = [
   { value: 'equipment_purchase', label: '備品購入' },
@@ -59,6 +60,8 @@ export default function NewReportPage() {
     setter(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
   }
   const [draftLoading, setDraftLoading] = useState(false)
+  const [draftListLoading, setDraftListLoading] = useState(false)
+  const [draftList, setDraftList] = useState<Array<{ id: string; report_date: string; title: string | null; status: string }>>([])
   const [showSummary, setShowSummary] = useState(false)
 
   // 稼働時間の自動計算（開始時間・終了時間から）
@@ -218,24 +221,39 @@ export default function NewReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
-  // 下書きデータを取得 — 自分の最新の draft レポートを読み込んで現在の入力に反映
-  const loadLatestDraft = async () => {
+  // ドラフト/提出済み一覧をメニュー用に取得
+  const loadDraftList = async () => {
+    if (draftList.length > 0) return
+    setDraftListLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const [{ data: drafts }, { data: submitted }] = await Promise.all([
+        supabase.from('reports').select('id, report_date, title, status').eq('user_id', user.id).eq('status', 'draft').order('updated_at', { ascending: false }).limit(5),
+        supabase.from('reports').select('id, report_date, title, status').eq('user_id', user.id).in('status', ['submitted', 'approved']).order('report_date', { ascending: false }).limit(5),
+      ])
+      setDraftList([...(drafts || []), ...(submitted || [])])
+    } finally {
+      setDraftListLoading(false)
+    }
+  }
+
+  // 指定した日報IDのデータを読み込んでフォームに反映
+  const loadReportData = async (reportId: string, reportDate: string, status: string) => {
     setDraftLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('認証エラー')
 
-      const { data: drafts, error: draftsError } = await supabase
+      const { data: reports, error: reportError } = await supabase
         .from('reports')
         .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'draft')
-        .order('updated_at', { ascending: false })
+        .eq('id', reportId)
         .limit(1)
-      if (draftsError) throw draftsError
-      const draft = (drafts || [])[0]
+      if (reportError) throw reportError
+      const draft = (reports || [])[0]
       if (!draft) {
-        toast.info('下書きが見つかりませんでした')
+        toast.info('データが見つかりませんでした')
         return
       }
 
@@ -320,9 +338,10 @@ export default function NewReportPage() {
       }))
       setPlannedTasks(restoredPlanned)
 
-      toast.success(`${draft.report_date} の下書きを読み込みました`)
+      const label = status === 'draft' ? '下書き' : '日報'
+      toast.success(`${draft.report_date} の${label}を読み込みました`)
     } catch (err: any) {
-      toast.error(err.message || '下書きの取得に失敗しました')
+      toast.error(err.message || 'データの取得に失敗しました')
     } finally {
       setDraftLoading(false)
     }
@@ -1019,10 +1038,50 @@ export default function NewReportPage() {
           <h1 className="text-3xl font-bold tracking-tight">日報作成</h1>
           <p className="text-muted-foreground">業務内容を記録してください</p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={loadLatestDraft} disabled={draftLoading}>
-          <Download className="mr-1 h-4 w-4" />
-          {draftLoading ? '取得中...' : '下書きデータを取得'}
-        </Button>
+        <DropdownMenu onOpenChange={(open) => { if (open) loadDraftList() }}>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={draftLoading}>
+              <History className="mr-1 h-4 w-4" />
+              {draftLoading ? '読み込み中...' : '過去データから読み込み'}
+              <ChevronDown className="ml-1 h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
+            <DropdownMenuLabel className="text-xs text-muted-foreground flex items-center gap-1">
+              <FileText className="h-3 w-3" />下書き
+            </DropdownMenuLabel>
+            {draftListLoading ? (
+              <DropdownMenuItem disabled>読み込み中...</DropdownMenuItem>
+            ) : draftList.filter(d => d.status === 'draft').length === 0 ? (
+              <DropdownMenuItem disabled className="text-muted-foreground text-xs">下書きがありません</DropdownMenuItem>
+            ) : (
+              draftList.filter(d => d.status === 'draft').map(d => (
+                <DropdownMenuItem key={d.id} onClick={() => loadReportData(d.id, d.report_date, d.status)}>
+                  <Download className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <span>{d.report_date}</span>
+                  {d.title && <span className="ml-1 text-muted-foreground truncate text-xs">・{d.title}</span>}
+                </DropdownMenuItem>
+              ))
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground flex items-center gap-1">
+              <ClipboardCheck className="h-3 w-3" />提出済み日報からコピー
+            </DropdownMenuLabel>
+            {draftListLoading ? (
+              <DropdownMenuItem disabled>読み込み中...</DropdownMenuItem>
+            ) : draftList.filter(d => d.status !== 'draft').length === 0 ? (
+              <DropdownMenuItem disabled className="text-muted-foreground text-xs">提出済み日報がありません</DropdownMenuItem>
+            ) : (
+              draftList.filter(d => d.status !== 'draft').map(d => (
+                <DropdownMenuItem key={d.id} onClick={() => loadReportData(d.id, d.report_date, d.status)}>
+                  <ClipboardCheck className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <span>{d.report_date}</span>
+                  {d.title && <span className="ml-1 text-muted-foreground truncate text-xs">・{d.title}</span>}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* タブ切替 */}
