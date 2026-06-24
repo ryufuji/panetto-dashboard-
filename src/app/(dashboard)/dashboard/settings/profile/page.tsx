@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Save, Camera, Loader2 } from 'lucide-react'
+import { Save, Camera, Loader2, Copy, RefreshCw, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function ProfilePage() {
@@ -17,6 +17,9 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [apiToken, setApiToken] = useState<string | null>(null)
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const [showToken, setShowToken] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -24,7 +27,7 @@ export default function ProfilePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser()
       if (!authUser) return
       const { data } = await supabase.from('users').select('*, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)').eq('id', authUser.id).single()
-      if (data) { setUser(data); setName(data.name); setPhone(data.phone || '') }
+      if (data) { setUser(data); setName(data.name); setPhone(data.phone || ''); setApiToken(data.api_token ?? null) }
     }
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -79,6 +82,23 @@ export default function ProfilePage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  const regenerateToken = async () => {
+    if (!confirm('APIトークンを再生成すると、現在のトークンは無効になります。続けますか？')) return
+    setTokenLoading(true)
+    try {
+      const res = await fetch('/api/external/token', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      setApiToken(json.api_token)
+      setShowToken(true)
+      toast.success('APIトークンを再生成しました')
+    } catch (e: any) {
+      toast.error(e.message || '再生成に失敗しました')
+    } finally {
+      setTokenLoading(false)
+    }
+  }
+
   if (!user) return null
 
   return (
@@ -127,6 +147,67 @@ export default function ProfilePage() {
             <div className="space-y-2"><Label>役職</Label><Input value={user.position || ''} disabled /></div>
           </div>
           <Button onClick={handleSave} disabled={loading}><Save className="mr-2 h-4 w-4" />保存</Button>
+        </CardContent>
+      </Card>
+
+      {/* API連携トークン */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound className="h-4 w-4" />API連携トークン
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            GAS・Claude Codeなどの外部自動化から日報の下書きを自動投入するためのトークンです。
+            <code className="mx-1 rounded bg-slate-100 px-1 py-0.5 text-xs">Authorization: Bearer &lt;token&gt;</code>
+            ヘッダーで
+            <code className="mx-1 rounded bg-slate-100 px-1 py-0.5 text-xs">POST /api/external/draft</code>
+            を呼び出します。
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded border bg-slate-50 px-3 py-2 font-mono text-sm text-slate-800 overflow-auto">
+              {showToken ? (apiToken ?? '—') : (apiToken ? '•'.repeat(36) : '—')}
+            </code>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowToken(v => !v)}
+              disabled={!apiToken}
+            >
+              {showToken ? '隠す' : '表示'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!apiToken || !showToken}
+              onClick={() => {
+                if (apiToken) { navigator.clipboard.writeText(apiToken); toast.success('コピーしました') }
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={regenerateToken} disabled={tokenLoading}>
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${tokenLoading ? 'animate-spin' : ''}`} />
+              トークンを再生成
+            </Button>
+            <p className="text-xs text-muted-foreground">再生成すると旧トークンは即時無効になります</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+            <p className="font-medium text-slate-700">利用例（GAS / curl）</p>
+            <pre className="whitespace-pre-wrap break-all">{`curl -X POST https://panetto-dashboard.vercel.app/api/external/draft \\
+  -H "Authorization: Bearer <token>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "report_date": "2026-06-25",
+    "title": "自動生成 日報",
+    "tasks": [
+      { "title": "業務A", "estimated_hours": 2, "progress_rate": 0 }
+    ]
+  }'`}</pre>
+          </div>
         </CardContent>
       </Card>
     </div>
