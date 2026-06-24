@@ -1,33 +1,21 @@
 /**
- * PATCH /api/external/draft/[id] — 既存の下書きを部分更新
+ * PATCH  /api/external/draft/[id] — 既存の下書きを部分更新
  * DELETE /api/external/draft/[id] — 下書きを削除
  *
  * 認証: Authorization: Bearer <api_token>
  * 対象は自分の下書きのみ（status='draft' 以外は操作不可）
  */
-import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-
-async function resolveUserByToken(req: NextRequest) {
-  const auth = req.headers.get('authorization') || ''
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  if (!token) return null
-  const supabase = await createClient()
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, organization_id, department_id')
-    .eq('api_token', token)
-    .maybeSingle()
-  return user ?? null
-}
+import { resolveUserByToken, createExternalClient, insertTasksForReport } from '@/lib/external-api'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = await resolveUserByToken(req)
   if (!user) return NextResponse.json({ error: '認証エラー' }, { status: 401 })
 
-  const supabase = await createClient()
-  // 自分の下書きであることを確認
+  const supabase = createExternalClient()
+
+  // 所有確認（自分のdraftのみ）
   const { data: existing } = await supabase
     .from('reports')
     .select('id')
@@ -49,54 +37,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (next_day_plan !== undefined) patch.next_day_plan = next_day_plan
 
   if (Object.keys(patch).length > 0) {
-    const { error } = await supabase.from('reports').update(patch).eq('id', id)
+    // user_id + status を明示的に絞り込み、所有確認とUPDATEを一体化
+    const { error } = await supabase
+      .from('reports')
+      .update(patch)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .eq('status', 'draft')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   if (Array.isArray(tasks)) {
-    await supabase.from('report_tasks').delete().eq('report_id', id)
-    for (let i = 0; i < tasks.length; i++) {
-      const t = tasks[i]
-      const { data: parentTask } = await supabase.from('report_tasks').insert({
-        report_id: id,
-        title: String(t.title || '').trim() || '(無題)',
-        description: t.description ?? null,
-        estimated_hours: t.estimated_hours != null ? Number(t.estimated_hours) : null,
-        progress_rate: t.progress_rate != null ? Math.min(100, Math.max(0, Number(t.progress_rate))) : 0,
-        priority: ['high', 'medium', 'low'].includes(t.priority) ? t.priority : 'medium',
-        order_index: i,
-        purpose: t.purpose ?? null,
-        memo: t.memo ?? null,
-        task_status: t.task_status ?? '未着手',
-        is_recurring: !!t.is_recurring,
-        recurrence_pattern: t.is_recurring ? (t.recurrence_pattern ?? 'daily') : null,
-        no_norma: !!t.no_norma,
-        due_date: t.due_date ?? null,
-      }).select('id').single()
+    const { error: delErr } = await supabase.from('report_tasks').delete().eq('report_id', id)
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
 
-      if (parentTask && Array.isArray(t.children)) {
-        for (let j = 0; j < t.children.length; j++) {
-          const c = t.children[j]
-          await supabase.from('report_tasks').insert({
-            report_id: id,
-            parent_task_id: parentTask.id,
-            title: String(c.title || '').trim() || '(無題)',
-            estimated_hours: c.estimated_hours != null ? Number(c.estimated_hours) : null,
-            progress_rate: c.progress_rate != null ? Math.min(100, Math.max(0, Number(c.progress_rate))) : 0,
-            priority: ['high', 'medium', 'low'].includes(c.priority) ? c.priority : 'medium',
-            order_index: j,
-            task_status: c.task_status ?? '未着手',
-            memo: c.memo ?? null,
-          })
-        }
-      }
+    if (tasks.length > 0) {
+      const err = await insertTasksForReport(supabase, id, tasks)
+      if (err) return NextResponse.json({ error: `タスクの保存に失敗しました: ${err}` }, { status: 500 })
     }
   }
 
   if (Array.isArray(planned_tasks)) {
-    await supabase.from('report_planned_tasks').delete().eq('report_id', id)
+    const { error: delErr } = await supabase.from('report_planned_tasks').delete().eq('report_id', id)
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+
     if (planned_tasks.length > 0) {
-      await supabase.from('report_planned_tasks').insert(
+      const { error: insErr } = await supabase.from('report_planned_tasks').insert(
         planned_tasks.map((p: any, idx: number) => ({
           report_id: id,
           title: String(p.title || '').trim() || '(無題)',
@@ -104,6 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           order_index: idx,
         }))
       )
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
     }
   }
 
@@ -115,14 +82,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const user = await resolveUserByToken(req)
   if (!user) return NextResponse.json({ error: '認証エラー' }, { status: 401 })
 
-  const supabase = await createClient()
-  const { error } = await supabase
+  const supabase = createExternalClient()
+  const { error, count } = await supabase
     .from('reports')
-    .delete()
+    .delete({ count: 'exact' })
     .eq('id', id)
     .eq('user_id', user.id)
     .eq('status', 'draft')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (count === 0) return NextResponse.json({ error: '下書きが見つかりません（既に削除済みか提出済みの可能性があります）' }, { status: 404 })
   return NextResponse.json({ ok: true })
 }
