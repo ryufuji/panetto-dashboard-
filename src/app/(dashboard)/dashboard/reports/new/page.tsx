@@ -289,40 +289,41 @@ export default function NewReportPage() {
         })
       }
 
+      // 1パス目: DB の id → ローカル UUID を全件マップ（親より先に子が来ても解決できるよう先行登録）
       const dbToLocal = new Map<string, string>()
-      const restored: Task[] = (dbTasks || []).map((t: any) => {
-        const localId = crypto.randomUUID()
-        dbToLocal.set(t.id, localId)
-        return {
-          id: localId,
-          db_id: t.id,
-          title: t.title || '',
-          description: t.description || '',
-          estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '',
-          actual_hours: t.actual_hours != null ? String(t.actual_hours) : '',
-          progress_rate: t.progress_rate ?? 0,
-          task_type: t.task_type || '',
-          priority: t.priority || 'medium',
-          start_date: t.start_date || today,
-          due_date: t.due_date || '',
-          parent_id: t.parent_task_id ? dbToLocal.get(t.parent_task_id) || null : null,
-          approval: defaultApproval(),
-          purpose: t.purpose || '',
-          memo: t.memo || '',
-          actual_url: t.actual_url || '',
-          task_status: t.task_status || '未着手',
-          target_norma_count: t.target_norma_count != null ? String(t.target_norma_count) : '',
-          target_norma_amount: t.target_norma_amount != null ? String(t.target_norma_amount) : '',
-          today_result_count: t.today_result_count != null ? String(t.today_result_count) : '',
-          today_result_amount: t.today_result_amount != null ? String(t.today_result_amount) : '',
-          no_norma: !!t.no_norma,
-          no_due_date: !!t.no_due_date,
-          is_recurring: !!t.is_recurring,
-          recurrence_pattern: t.recurrence_pattern || undefined,
-          is_omitted: !!t.is_omitted,
-          shared_user_ids: sharedMap.get(t.id) || [],
-        } as Task
-      })
+      for (const t of (dbTasks || [])) {
+        dbToLocal.set(t.id, crypto.randomUUID())
+      }
+      // 2パス目: parent_id を dbToLocal で解決して Task オブジェクトを生成
+      const restored: Task[] = (dbTasks || []).map((t: any) => ({
+        id: dbToLocal.get(t.id)!,
+        db_id: t.id,
+        title: t.title || '',
+        description: t.description || '',
+        estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '',
+        actual_hours: t.actual_hours != null ? String(t.actual_hours) : '',
+        progress_rate: t.progress_rate ?? 0,
+        task_type: t.task_type || '',
+        priority: t.priority || 'medium',
+        start_date: t.start_date || today,
+        due_date: t.due_date || '',
+        parent_id: t.parent_task_id ? (dbToLocal.get(t.parent_task_id) ?? null) : null,
+        approval: defaultApproval(),
+        purpose: t.purpose || '',
+        memo: t.memo || '',
+        actual_url: t.actual_url || '',
+        task_status: t.task_status || '未着手',
+        target_norma_count: t.target_norma_count != null ? String(t.target_norma_count) : '',
+        target_norma_amount: t.target_norma_amount != null ? String(t.target_norma_amount) : '',
+        today_result_count: t.today_result_count != null ? String(t.today_result_count) : '',
+        today_result_amount: t.today_result_amount != null ? String(t.today_result_amount) : '',
+        no_norma: !!t.no_norma,
+        no_due_date: !!t.no_due_date,
+        is_recurring: !!t.is_recurring,
+        recurrence_pattern: t.recurrence_pattern || undefined,
+        is_omitted: !!t.is_omitted,
+        shared_user_ids: sharedMap.get(t.id) || [],
+      } as Task))
       if (restored.length > 0) setTasks(restored)
 
       // ③ planned_tasks
