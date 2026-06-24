@@ -661,18 +661,22 @@ export default function NewReportPage() {
   /** 過去の定期タスクから今日該当分を自動取り込み */
   const autoIngestRecurringTasks = async (userId: string) => {
     try {
-      // 直近 100 件程度の自分の提出済み日報を新しい順に取得
+      // 提出済み＋下書きを含む直近 100 件を新しい順に取得
+      // 下書きも対象にすることで、一度も提出していないユーザーの定期タスクも拾う
       const { data: pastReports } = await supabase
         .from('reports')
-        .select('id, report_date')
+        .select('id, report_date, status')
         .eq('user_id', userId)
-        .in('status', ['submitted', 'approved'])
+        .in('status', ['submitted', 'approved', 'draft'])
         .order('report_date', { ascending: false })
         .limit(100)
       if (!pastReports || pastReports.length === 0) return
 
       const reportIds = pastReports.map((r: any) => r.id)
       const dateMap = new Map(pastReports.map((r: any) => [r.id, r.report_date]))
+      // 提出済み > 承認済み > 下書き の優先度で重複解消するためステータスを保持
+      const statusPriority: Record<string, number> = { approved: 3, submitted: 2, draft: 1 }
+      const statusMap = new Map(pastReports.map((r: any) => [r.id, r.status as string]))
 
       // is_recurring=true な親タスクのみ取得
       const { data: recurTasks } = await supabase
@@ -683,18 +687,21 @@ export default function NewReportPage() {
         .is('parent_task_id', null)
       if (!recurTasks || recurTasks.length === 0) return
 
-      // タイトルで重複除去 (最新報告のものを優先)
+      // タイトルで重複除去: 提出済み優先、同ステータスなら日付が新しいものを優先
       const byTitle = new Map<string, any>()
       for (const t of recurTasks as any[]) {
         const key = (t.title || '').trim()
         if (!key) continue
         const existing = byTitle.get(key)
         const dateStr = dateMap.get(t.report_id) as string | undefined
+        const tPriority = statusPriority[statusMap.get(t.report_id) || 'draft'] ?? 1
         if (!existing) {
-          byTitle.set(key, { ...t, _report_date: dateStr })
+          byTitle.set(key, { ...t, _report_date: dateStr, _priority: tPriority })
         } else {
-          if ((dateStr || '') > (existing._report_date || '')) {
-            byTitle.set(key, { ...t, _report_date: dateStr })
+          const exPriority = existing._priority ?? 1
+          const isNewer = tPriority > exPriority || (tPriority === exPriority && (dateStr || '') > (existing._report_date || ''))
+          if (isNewer) {
+            byTitle.set(key, { ...t, _report_date: dateStr, _priority: tPriority })
           }
         }
       }
