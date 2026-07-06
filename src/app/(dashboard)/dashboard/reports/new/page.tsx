@@ -52,6 +52,8 @@ export default function NewReportPage() {
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([])
   const [areaId, setAreaId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [cachedUserId, setCachedUserId] = useState<string | null>(null)
+  const [cachedOrgId, setCachedOrgId] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
@@ -469,74 +471,46 @@ export default function NewReportPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // Load organization members
-      const res = await fetch('/api/organization/users')
-      const json = await res.json()
-      if (res.ok) {
-        setMembers((json.data || []).filter((m: any) => m.id !== user.id))
+      // Wave 2: 組織メンバー取得とプロフィール取得を並列実行
+      const [membersData, { data: profile }] = await Promise.all([
+        fetch('/api/organization/users').then(r => r.ok ? r.json() : null),
+        supabase.from('users').select('id, name, organization_id, department_id, office_id').eq('id', user.id).single(),
+      ])
+      if (membersData) {
+        setMembers((membersData.data || []).filter((m: any) => m.id !== user.id))
       }
+      if (!profile) return
 
-      // Load profile + threshold rules + offices + departments
-      const { data: profile } = await supabase
-        .from('users')
-        .select('id, name, organization_id, department_id, office_id')
-        .eq('id', user.id)
-        .single()
-      if (profile) {
-        // 名前 / 拠点 / 部署 を初期値にセット
-        setUserName((profile as any).name || '')
-        if ((profile as any).office_id) setAreaId((profile as any).office_id)
-        if ((profile as any).department_id) setDepartmentId((profile as any).department_id)
+      setCachedUserId(user.id)
+      setCachedOrgId((profile as any).organization_id)
+      setUserName((profile as any).name || '')
+      if ((profile as any).office_id) setAreaId((profile as any).office_id)
+      if ((profile as any).department_id) setDepartmentId((profile as any).department_id)
 
-        // 前回設定した業務開始時間を引き継ぐ
-        const { data: lastReport } = await supabase
-          .from('reports')
-          .select('start_time')
-          .eq('user_id', user.id)
-          .in('status', ['submitted', 'approved', 'draft'])
-          .not('start_time', 'is', null)
-          .neq('start_time', '')
-          .order('report_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (lastReport?.start_time) setStartTime(lastReport.start_time)
-
-        // 拠点と部署の選択肢
-        const [{ data: offs }, { data: depts }] = await Promise.all([
+      // Wave 3: UIセットアップクエリと未完了タスク取り込みを並列実行
+      const [{ data: lastReport }, [{ data: offs }, { data: depts }], { data: rules }, deptResult] = await Promise.all([
+        supabase.from('reports').select('start_time').eq('user_id', user.id).in('status', ['submitted', 'approved', 'draft']).not('start_time', 'is', null).neq('start_time', '').order('report_date', { ascending: false }).limit(1).maybeSingle(),
+        Promise.all([
           supabase.from('offices').select('id, name').eq('organization_id', (profile as any).organization_id).eq('is_active', true).order('name'),
           supabase.from('departments').select('id, name').eq('organization_id', (profile as any).organization_id).eq('is_active', true).order('order_index'),
-        ])
-        setAreas((offs || []) as any)
-        setDepartments((depts || []) as any)
+        ]),
+        supabase.from('approval_threshold_rules').select('*').eq('organization_id', (profile as any).organization_id).order('min_amount', { ascending: true }),
+        (profile as any).department_id
+          ? supabase.from('departments').select('manager_id').eq('id', (profile as any).department_id).single()
+          : Promise.resolve({ data: null }),
+        autoIngestIncompleteTasks(user.id),
+      ])
 
-        // 承認閾値ルール
-        const { data: rules } = await supabase
-          .from('approval_threshold_rules')
-          .select('*')
-          .eq('organization_id', (profile as any).organization_id)
-          .order('min_amount', { ascending: true })
-        setThresholdRules(rules || [])
-
-        if ((profile as any).department_id) {
-          const { data: dept } = await supabase
-            .from('departments')
-            .select('manager_id')
-            .eq('id', (profile as any).department_id)
-            .single()
-          if ((dept as any)?.manager_id && (dept as any).manager_id !== user.id) {
-            setDefaultApproverId((dept as any).manager_id)
-          }
-        }
-
-        // ── 未完了タスクの自動引き継ぎ（前回提出日報） ──
-        // 定期タスクより先に実行し、重複タイトルを定期タスク側でスキップさせる
-        await autoIngestIncompleteTasks(user.id)
-
-        // ── 定期タスクの自動取り込み ──
-        // 過去の自分の提出済み日報から is_recurring=true なタスクを集め、
-        // recurrence_pattern が today に該当するものをタイトル重複なしで追加
-        await autoIngestRecurringTasks(user.id)
+      if (lastReport?.start_time) setStartTime(lastReport.start_time)
+      setAreas((offs || []) as any)
+      setDepartments((depts || []) as any)
+      setThresholdRules(rules || [])
+      if ((deptResult as any)?.data?.manager_id && (deptResult as any).data.manager_id !== user.id) {
+        setDefaultApproverId((deptResult as any).data.manager_id)
       }
+
+      // 定期タスクは未完了タスクの後に実行（重複排除のため）
+      await autoIngestRecurringTasks(user.id)
     }
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -664,13 +638,16 @@ export default function NewReportPage() {
     try {
       // 提出済み＋下書きを含む直近 100 件を新しい順に取得
       // 下書きも対象にすることで、一度も提出していないユーザーの定期タスクも拾う
+      const thirtyDaysAgo = new Date(today)
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
       const { data: pastReports } = await supabase
         .from('reports')
         .select('id, report_date, status')
         .eq('user_id', userId)
         .in('status', ['submitted', 'approved', 'draft'])
+        .gte('report_date', thirtyDaysAgo.toISOString().slice(0, 10))
         .order('report_date', { ascending: false })
-        .limit(100)
+        .limit(30)
       if (!pastReports || pastReports.length === 0) return
 
       const reportIds = pastReports.map((r: any) => r.id)
@@ -857,11 +834,9 @@ export default function NewReportPage() {
   const handleSubmit = async (status: 'draft' | 'submitted') => {
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('認証エラー')
-
-      const { data: profile } = await supabase.from('users').select('organization_id, department_id').eq('id', user.id).single()
-      if (!profile) throw new Error('プロフィール未設定')
+      const userId = cachedUserId
+      const orgId = cachedOrgId
+      if (!userId || !orgId) throw new Error('認証エラー')
 
       // Validate approval forms
       const parentTasksWithApproval = tasks.filter(t => !t.parent_id && t.title && t.approval.enabled)
@@ -887,9 +862,9 @@ export default function NewReportPage() {
       }
 
       const { data: report, error } = await supabase.from('reports').insert({
-        organization_id: profile.organization_id,
-        user_id: user.id,
-        department_id: departmentId || profile.department_id,
+        organization_id: orgId,
+        user_id: userId,
+        department_id: departmentId || null,
         report_date: reportDate,
         title: title || null,
         work_hours: workHours ? parseFloat(workHours) : null,
@@ -976,36 +951,39 @@ export default function NewReportPage() {
           }
         }
 
-        // Insert child tasks
+        // Insert child tasks (one batch per parent)
         const children = tasks.filter(t => t.parent_id === pt.id && t.title)
-        for (let j = 0; j < children.length; j++) {
-          const ct = children[j]
-          await supabase.from('report_tasks').insert({
-            report_id: report.id,
-            parent_task_id: savedTask?.id,
-            title: ct.title,
-            description: ct.description || null,
-            estimated_hours: ct.estimated_hours ? parseFloat(ct.estimated_hours) : null,
-            actual_hours: ct.actual_hours ? parseFloat(ct.actual_hours) : null,
-            progress_rate: ct.progress_rate,
-            task_type: ct.task_type || null,
-            priority: ct.priority,
-            start_date: ct.start_date || null,
-            due_date: ct.due_date || null,
-            order_index: j,
-          })
+        if (children.length > 0 && savedTask) {
+          await supabase.from('report_tasks').insert(
+            children.map((ct, j) => ({
+              report_id: report.id,
+              parent_task_id: savedTask.id,
+              title: ct.title,
+              description: ct.description || null,
+              estimated_hours: ct.estimated_hours ? parseFloat(ct.estimated_hours) : null,
+              actual_hours: ct.actual_hours ? parseFloat(ct.actual_hours) : null,
+              progress_rate: ct.progress_rate,
+              task_type: ct.task_type || null,
+              priority: ct.priority,
+              start_date: ct.start_date || null,
+              due_date: ct.due_date || null,
+              order_index: j,
+            }))
+          )
         }
       }
 
-      // Insert planned tasks
+      // Insert planned tasks (batch)
       const validPlannedTasks = plannedTasks.filter(pt => pt.title.trim())
-      for (let i = 0; i < validPlannedTasks.length; i++) {
-        await supabase.from('report_planned_tasks').insert({
-          report_id: report.id,
-          title: validPlannedTasks[i].title.trim(),
-          estimated_hours: validPlannedTasks[i].estimated_hours ? parseFloat(validPlannedTasks[i].estimated_hours) : null,
-          order_index: i,
-        })
+      if (validPlannedTasks.length > 0) {
+        await supabase.from('report_planned_tasks').insert(
+          validPlannedTasks.map((pt, i) => ({
+            report_id: report.id,
+            title: pt.title.trim(),
+            estimated_hours: pt.estimated_hours ? parseFloat(pt.estimated_hours) : null,
+            order_index: i,
+          }))
+        )
       }
 
       // 提出時はLINE Worksにも通知（失敗しても保存は成功扱い）
