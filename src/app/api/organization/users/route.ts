@@ -52,25 +52,10 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const ctx = await getAdminContext(supabase)
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { data: currentUser } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (currentUser?.role !== 'admin') {
-      return NextResponse.json(
-        { error: '管理者権限が必要です' },
-        { status: 403 }
-      )
+    if (!ctx) {
+      return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
     }
 
     const body = await request.json()
@@ -98,10 +83,12 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
+    // RLS を回避するため service role クライアントで更新。同組織内に限定してセーフガード。
+    const { data, error } = await ctx.adminClient
       .from('users')
       .update(updates)
       .eq('id', user_id)
+      .eq('organization_id', ctx.organization_id)
       .select('*, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)')
       .single()
 
