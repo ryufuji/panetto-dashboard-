@@ -678,7 +678,7 @@ export default function EditReportPage() {
   const parentTasks = tasks.filter(t => !t.parent_id)
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl pb-20">
       <div className="flex items-center gap-4">
         <Link href={`/dashboard/reports/${id}`}>
           <Button variant="ghost" size="sm">

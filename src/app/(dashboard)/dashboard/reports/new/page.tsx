@@ -1026,7 +1026,7 @@ export default function NewReportPage() {
   const parentTasks = tasks.filter(t => !t.parent_id)
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-5xl pb-20">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">日報作成</h1>
