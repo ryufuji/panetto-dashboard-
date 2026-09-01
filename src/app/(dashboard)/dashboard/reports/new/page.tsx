@@ -55,6 +55,7 @@ export default function NewReportPage() {
   const [cachedUserId, setCachedUserId] = useState<string | null>(null)
   const [cachedOrgId, setCachedOrgId] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
+  const [reviewerName, setReviewerName] = useState<string | null>(null)
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const setNow = (setter: (v: string) => void) => {
@@ -474,7 +475,7 @@ export default function NewReportPage() {
       // Wave 2: 組織メンバー取得とプロフィール取得を並列実行
       const [membersData, { data: profile }] = await Promise.all([
         fetch('/api/organization/users').then(r => r.ok ? r.json() : null),
-        supabase.from('users').select('id, name, organization_id, department_id, office_id').eq('id', user.id).single(),
+        supabase.from('users').select('id, name, organization_id, department_id, office_id, report_reviewer_id').eq('id', user.id).single(),
       ])
       if (membersData) {
         setMembers((membersData.data || []).filter((m: any) => m.id !== user.id))
@@ -486,6 +487,13 @@ export default function NewReportPage() {
       setUserName((profile as any).name || '')
       if ((profile as any).office_id) setAreaId((profile as any).office_id)
       if ((profile as any).department_id) setDepartmentId((profile as any).department_id)
+
+      // 確認者名をセット（report_reviewer_id が設定されていればその人、なければ部署長）
+      const reviewerId = (profile as any).report_reviewer_id
+      if (reviewerId && membersData?.data) {
+        const reviewer = (membersData.data as any[]).find(m => m.id === reviewerId)
+        if (reviewer) setReviewerName(reviewer.name)
+      }
 
       // Wave 3: UIセットアップクエリと未完了タスク取り込みを並列実行
       const [{ data: lastReport }, [{ data: offs }, { data: depts }], { data: rules }, deptResult] = await Promise.all([
@@ -1120,6 +1128,10 @@ export default function NewReportPage() {
               <Input value={userName} disabled />
             </div>
           </div>
+          <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            確認者（上長）: <span className="font-medium text-foreground">{reviewerName || '部署長（デフォルト）'}</span>
+            <span className="ml-2">— 提出後にこの方が日報を確認します</span>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>報告日 <span className="text-red-500">(*)</span><HelpTip text="この日報の対象日付" /></Label>
@@ -1446,6 +1458,7 @@ export default function NewReportPage() {
                     <ClipboardCheck className="h-4 w-4 text-blue-500" />
                     <span className="text-sm font-medium">承認申請を行う</span>
                   </label>
+                  <p className="ml-6 text-xs text-muted-foreground">備品購入・書類確認など上長の承認が必要な場合のみチェック。ルーティン業務は不要です。</p>
 
                   {task.approval.enabled && (
                     <div className="mt-3 ml-6 space-y-3 rounded-lg border border-blue-200 bg-blue-50/30 p-4">
@@ -1537,7 +1550,7 @@ export default function NewReportPage() {
                           <SelectTrigger><SelectValue placeholder="承認者を追加..." /></SelectTrigger>
                           <SelectContent>
                             {members
-                              .filter(m => !task.approval.approvers.includes(m.id))
+                              .filter(m => (m.role === 'admin' || m.role === 'manager') && !task.approval.approvers.includes(m.id))
                               .map(m => (
                                 <SelectItem key={m.id} value={m.id}>
                                   {m.name}{m.department?.name ? ` (${m.department.name})` : ''}

@@ -54,7 +54,6 @@ export default function EditReportPage() {
   const [condition, setCondition] = useState('')
   const [summary, setSummary] = useState('')
   const [issues, setIssues] = useState('')
-  const [tomorrowPlan, setTomorrowPlan] = useState('')
   const [tasks, setTasks] = useState<Task[]>([])
   const [originalStatus, setOriginalStatus] = useState('')
   const [members, setMembers] = useState<any[]>([])
@@ -145,7 +144,6 @@ export default function EditReportPage() {
       setCondition(report.condition || '')
       setSummary(report.summary || '')
       setIssues(report.issues || '')
-      setTomorrowPlan(report.tomorrow_plan || '')
       setOriginalStatus(report.status || 'draft')
 
       // Fetch approval requests linked to tasks
@@ -490,7 +488,7 @@ export default function EditReportPage() {
           title: title || null,
           work_hours: workHours ? parseFloat(workHours) : null,
           progress_rate: computedProgressRate,
-          next_day_plan: tomorrowPlan || nextDayPlan || null,
+          next_day_plan: nextDayPlan || null,
           status,
           submitted_at: status === 'submitted' ? new Date().toISOString() : null,
           updated_at: new Date().toISOString(),
@@ -1211,7 +1209,7 @@ export default function EditReportPage() {
               </div>
             </div>
             <Label className="text-sm text-muted-foreground">メモ（任意）</Label>
-            <Textarea placeholder="翌日の予定を入力..." value={tomorrowPlan || nextDayPlan} onChange={e => { setTomorrowPlan(e.target.value); setNextDayPlan(e.target.value) }} rows={3} />
+            <Textarea placeholder="翌日の予定を入力..." value={nextDayPlan} onChange={e => setNextDayPlan(e.target.value)} rows={3} />
           </div>
         </CardContent>
       </Card>
