@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Save, Camera, Loader2, Copy, RefreshCw, KeyRound } from 'lucide-react'
+import { Save, Camera, Loader2, Copy, RefreshCw, KeyRound, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function ProfilePage() {
@@ -20,6 +20,9 @@ export default function ProfilePage() {
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [tokenLoading, setTokenLoading] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -80,6 +83,27 @@ export default function ProfilePage() {
     setUploading(false)
     // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handlePasswordChange = async () => {
+    if (newPassword.length < 6) {
+      toast.error('パスワードは6文字以上で入力してください')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('パスワードが一致しません')
+      return
+    }
+    setPasswordLoading(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) {
+      toast.error('パスワードの変更に失敗しました')
+    } else {
+      toast.success('パスワードを変更しました')
+      setNewPassword('')
+      setConfirmPassword('')
+    }
+    setPasswordLoading(false)
   }
 
   const regenerateToken = async () => {
@@ -147,6 +171,41 @@ export default function ProfilePage() {
             <div className="space-y-2"><Label>役職</Label><Input value={user.position || ''} disabled /></div>
           </div>
           <Button onClick={handleSave} disabled={loading}><Save className="mr-2 h-4 w-4" />保存</Button>
+        </CardContent>
+      </Card>
+
+      {/* パスワード変更 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Lock className="h-4 w-4" />パスワード変更
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>新しいパスワード（6文字以上）</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="新しいパスワード"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>新しいパスワード（確認）</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="もう一度入力"
+              />
+            </div>
+          </div>
+          <Button onClick={handlePasswordChange} disabled={passwordLoading || !newPassword || !confirmPassword}>
+            {passwordLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            パスワードを変更する
+          </Button>
         </CardContent>
       </Card>
 
