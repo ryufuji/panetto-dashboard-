@@ -36,7 +36,7 @@ export default async function DraftsPage() {
                 <TableRow key={d.id} className="cursor-pointer hover:bg-gray-50">
                   <TableCell><Link href={`/dashboard/reports/${d.id}`} className="block font-medium">{d.report_date}</Link></TableCell>
                   <TableCell><Link href={`/dashboard/reports/${d.id}`} className="block">{d.title || '-'}</Link></TableCell>
-                  <TableCell><Link href={`/dashboard/reports/${d.id}`} className="block text-sm text-muted-foreground">{new Date(d.updated_at).toLocaleString('ja-JP')}</Link></TableCell>
+                  <TableCell><Link href={`/dashboard/reports/${d.id}`} className="block text-sm text-muted-foreground">{new Date(d.updated_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</Link></TableCell>
                   <TableCell><Link href={`/dashboard/reports/${d.id}`}><Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button></Link></TableCell>
                 </TableRow>
               )) : (

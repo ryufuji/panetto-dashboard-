@@ -220,6 +220,10 @@ export default function EditReportPage() {
           start_date: pt.start_date || '',
           due_date: displayDueDate,
           parent_id: null,
+          memo: pt.memo || '',
+          purpose: pt.purpose || '',
+          task_status: pt.task_status || '',
+          actual_url: pt.actual_url || '',
           approval,
           deadline_extensions: exts,
         })
@@ -517,6 +521,10 @@ export default function EditReportPage() {
           start_date: pt.start_date || null,
           due_date: pt.due_date || null,
           order_index: i,
+          memo: pt.memo || null,
+          purpose: pt.purpose || null,
+          task_status: pt.task_status || null,
+          actual_url: pt.actual_url || null,
         }).select().single()
 
         if (savedTask) {
@@ -786,6 +794,7 @@ export default function EditReportPage() {
                 </div>
                 <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
+                <Textarea placeholder="備考・メモ（任意）" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
                 <div className="grid grid-cols-6 gap-2">
                   <div>
                     <Label className="text-xs">見積(h)</Label>

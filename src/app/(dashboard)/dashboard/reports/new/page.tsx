@@ -1015,7 +1015,7 @@ export default function NewReportPage() {
       }
 
       toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
-      router.push('/dashboard/reports')
+      router.push(status === 'draft' ? `/dashboard/reports/${report.id}/edit` : '/dashboard/reports')
     } catch (err: any) {
       toast.error(err.message || '保存に失敗しました')
     } finally {

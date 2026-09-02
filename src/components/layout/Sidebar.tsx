@@ -8,7 +8,8 @@ import {
   Building2, Settings, ChevronLeft, ChevronRight,
   Users, ClipboardList, BarChart3, AlertTriangle, Bug, LayoutTemplate
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 const navigation = [
   { name: 'ダッシュボード', href: '/dashboard', icon: LayoutDashboard },
@@ -63,6 +64,18 @@ export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '承認確認'])
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      fetch('/api/approval-requests?tab=pending_approval')
+        .then(r => r.json())
+        .then(j => setPendingApprovalCount(j.data?.length || 0))
+        .catch(() => {})
+    })
+  }, [])
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev =>
@@ -147,11 +160,16 @@ export function Sidebar() {
                     return (
                       <Link key={child.href} href={child.href}
                         className={cn(
-                          'block rounded-lg px-3 py-1.5 text-sm transition-colors',
+                          'flex items-center justify-between rounded-lg px-3 py-1.5 text-sm transition-colors',
                           isActive ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
                             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800'
                         )}>
-                        {child.name}
+                        <span>{child.name}</span>
+                        {child.name === '承認待ち' && pendingApprovalCount > 0 && (
+                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                            {pendingApprovalCount}
+                          </span>
+                        )}
                       </Link>
                     )
                   })}
