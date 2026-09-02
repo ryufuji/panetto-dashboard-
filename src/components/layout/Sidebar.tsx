@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, FileText, CheckSquare, Store,
+  LayoutDashboard, FileText, Store,
   Building2, Settings, ChevronLeft, ChevronRight,
   Users, ClipboardList, BarChart3, AlertTriangle, Bug, LayoutTemplate
 } from 'lucide-react'
@@ -25,20 +25,16 @@ const navigation = [
     // { name: 'カレンダー', href: '/dashboard/reports/calendar' },
     { name: '月次レポート', href: '/dashboard/reports/monthly' },
   ]},
-  { name: '承認確認', icon: CheckSquare, children: [
-    // 自分が承認すべき申請 / 自分が処理済みの申請を扱う
-    // (旧 /approvals/* は日報用だったため廃止)
+  { name: '申請・承認', icon: ClipboardList, children: [
     { name: '承認待ち', href: '/dashboard/approval-requests?tab=pending_approval' },
     { name: '承認済み', href: '/dashboard/approval-requests?tab=approved_by_me' },
+    { name: '申請一覧', href: '/dashboard/approval-requests' },
+    { name: '新規申請', href: '/dashboard/approval-requests/new' },
+    { name: '承認設定', href: '/dashboard/approval-requests/settings' },
   ]},
   { name: 'パフォーマンス分析', icon: BarChart3, children: [
     { name: '社員ランキング', href: '/dashboard/performance' },
     { name: '部署比較', href: '/dashboard/performance/departments' },
-  ]},
-  { name: '申請管理', icon: ClipboardList, children: [
-    { name: '申請一覧', href: '/dashboard/approval-requests' },
-    { name: '新規申請', href: '/dashboard/approval-requests/new' },
-    { name: '承認設定', href: '/dashboard/approval-requests/settings' },
   ]},
   { name: '店舗運営', icon: Store, children: [
     { name: '店舗一覧', href: '/dashboard/stores' },
@@ -63,7 +59,7 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '承認確認'])
+  const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '申請・承認'])
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
 
   useEffect(() => {

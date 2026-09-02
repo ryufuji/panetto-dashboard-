@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, History } from 'lucide-react'
+import { FileText, Store, Users, TrendingUp, Clock, ListTodo, CalendarClock, ClipboardList, History, CheckCircle2, AlertCircle, PenLine } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { displayUserName } from '@/lib/user-display'
 
 export default async function DashboardPage() {
@@ -19,6 +20,7 @@ export default async function DashboardPage() {
     storeTasksRes,
     pendingRequestsRes,
     submittedReportsRes,
+    userTodayReportRes,
   ] = await Promise.all([
     supabase.from('reports').select('*', { count: 'exact', head: true }).eq('report_date', today),
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
@@ -32,9 +34,14 @@ export default async function DashboardPage() {
       .in('status', ['submitted', 'approved'])
       .order('submitted_at', { ascending: false, nullsFirst: false })
       .limit(10),
+    // ログインユーザー自身の今日の日報
+    authUser
+      ? supabase.from('reports').select('id, status').eq('user_id', authUser.id).eq('report_date', today).order('created_at', { ascending: false }).limit(1)
+      : Promise.resolve({ data: [] as any[] }),
   ])
 
   const submittedReports = submittedReportsRes.data || []
+  const userTodayReport = (userTodayReportRes.data || [])[0] || null
 
   const kpis = {
     reports: reportsRes.count || 0,
@@ -136,6 +143,48 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
         <p className="text-muted-foreground">業務日報ダッシュボード概要</p>
       </div>
+
+      {/* 今日のアクション */}
+      {authUser && (
+        userTodayReport === null ? (
+          <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <PenLine className="h-5 w-5 text-blue-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-blue-900">今日の日報がまだ作成されていません</p>
+                <p className="text-sm text-blue-700">業務終了前に提出しましょう</p>
+              </div>
+            </div>
+            <Link href="/dashboard/reports/new">
+              <Button className="shrink-0">今日の日報を作成する</Button>
+            </Link>
+          </div>
+        ) : userTodayReport.status === 'draft' ? (
+          <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-amber-900">今日の日報が下書き状態です</p>
+                <p className="text-sm text-amber-700">続きを書いて提出してください</p>
+              </div>
+            </div>
+            <Link href={`/dashboard/reports/${userTodayReport.id}/edit`}>
+              <Button variant="outline" className="shrink-0 border-amber-400 text-amber-800 hover:bg-amber-100">続きを書く</Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-5 py-4">
+            <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-green-900">今日の日報は提出済みです</p>
+              <p className="text-sm text-green-700">お疲れ様でした</p>
+            </div>
+            <Link href={`/dashboard/reports/${userTodayReport.id}`}>
+              <Button variant="ghost" size="sm" className="shrink-0 text-green-700">確認する</Button>
+            </Link>
+          </div>
+        )
+      )}
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
