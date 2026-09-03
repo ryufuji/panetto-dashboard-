@@ -585,39 +585,6 @@ export default function NewReportPage() {
           shared_user_ids: [],
         } as Task)
 
-        // 子タスクも引き継ぐ（未完了のものに限る）
-        const children = (allTasks as any[]).filter(
-          c => c.parent_task_id === t.id && (c.progress_rate ?? 0) < 100 && c.task_status !== '完了'
-        )
-        for (const c of children) {
-          additions.push({
-            id: crypto.randomUUID(),
-            title: c.title || '',
-            description: c.description || '',
-            estimated_hours: c.estimated_hours != null ? String(c.estimated_hours) : '',
-            actual_hours: '',
-            progress_rate: c.progress_rate ?? 0,
-            task_type: c.task_type || '',
-            priority: c.priority || 'medium',
-            start_date: today,
-            due_date: c.due_date && c.due_date >= today ? c.due_date : today,
-            parent_id: parentLocalId,
-            approval: defaultApproval(),
-            task_status: c.task_status || '未着手',
-            purpose: c.purpose || '',
-            memo: c.memo || '',
-            actual_url: c.actual_url || '',
-            target_norma_count: c.target_norma_count != null ? String(c.target_norma_count) : '',
-            target_norma_amount: c.target_norma_amount != null ? String(c.target_norma_amount) : '',
-            today_result_count: '',
-            today_result_amount: '',
-            no_norma: !!c.no_norma,
-            no_due_date: !!c.no_due_date,
-            is_recurring: false,
-            is_omitted: false,
-            shared_user_ids: [],
-          } as Task)
-        }
       }
 
       if (additions.length === 0) return
@@ -626,12 +593,8 @@ export default function NewReportPage() {
         const existingTitles = new Set(prev.filter(t => t.title.trim() && !t.parent_id).map(t => t.title.trim()))
         const parentAdditions = additions.filter(a => !a.parent_id && !existingTitles.has(a.title.trim()))
         if (parentAdditions.length === 0) return prev
-        // 追加する親タスクのローカルIDセット
-        const addedParentIds = new Set(parentAdditions.map(a => a.id))
-        // 対応する子タスクも含める
-        const childAdditions = additions.filter(a => a.parent_id && addedParentIds.has(a.parent_id))
         const baseline = prev.length === 1 && !prev[0].title.trim() ? [] : prev
-        return [...baseline, ...parentAdditions, ...childAdditions]
+        return [...baseline, ...parentAdditions]
       })
 
       const parentCount = additions.filter(a => !a.parent_id).length
@@ -654,6 +617,7 @@ export default function NewReportPage() {
         .eq('user_id', userId)
         .in('status', ['submitted', 'approved', 'draft'])
         .gte('report_date', thirtyDaysAgo.toISOString().slice(0, 10))
+        .lt('report_date', today)
         .order('report_date', { ascending: false })
         .limit(30)
       if (!pastReports || pastReports.length === 0) return
@@ -1146,6 +1110,14 @@ export default function NewReportPage() {
             <div className="space-y-2">
               <Label>開始時間 <span className="text-red-500">(*)</span><HelpTip text="業務を開始した時刻。終了時刻と合わせて稼働時間を自動計算します" /></Label>
               <Input type="time" placeholder="12:30" value={startTime} onChange={e => setStartTime(e.target.value)} />
+              <div className="flex flex-wrap gap-1">
+                {['09:00', '10:00', '11:00', '12:00', '13:00'].map(t => (
+                  <button key={t} type="button" onClick={() => setStartTime(t)}
+                    className="rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground">
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="space-y-2">
               <Label>終了時間 <span className="text-red-500">(*)</span><HelpTip text="業務を終了した時刻" /></Label>

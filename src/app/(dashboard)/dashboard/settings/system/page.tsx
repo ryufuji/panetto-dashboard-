@@ -9,8 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import { Building2, FileText, CheckSquare, Shield, Save, Loader2 } from 'lucide-react'
+import { Building2, FileText, CheckSquare, Shield, Save, Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 
 interface OrgSettings {
   report_deadline_hour?: number
@@ -38,6 +39,7 @@ export default function SystemSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [org, setOrg] = useState<any>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Organization info
   const [orgName, setOrgName] = useState('')
@@ -51,6 +53,17 @@ export default function SystemSettingsPage() {
 
   useEffect(() => {
     const load = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        setIsAdmin(profile?.role === 'admin')
+      }
+
       const res = await fetch('/api/organization/settings')
       const json = await res.json()
       if (json.data) {
@@ -115,6 +128,19 @@ export default function SystemSettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">システム設定</h1>
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold tracking-tight">システム設定</h1>
+        <div className="flex flex-col items-center justify-center gap-3 py-24 text-center text-muted-foreground">
+          <Lock className="h-10 w-10 opacity-40" />
+          <p className="text-lg font-medium">管理者専用ページです</p>
+          <p className="text-sm">このページにアクセスするには管理者権限が必要です。担当者にお問い合わせください。</p>
         </div>
       </div>
     )

@@ -300,32 +300,17 @@ export async function sendLineWorksMessage(
     return { ok: false, error: 'not_configured' }
   }
 
-  const chunks = splitMessage(text)
-  console.log(`[LINEWORKS] sending ${chunks.length} chunk(s) (total ${text.length} chars)`)
-  let lastResult: SendResult = { ok: false, error: 'no_chunks' }
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i]
-    // 連続送信時のレート制限を避けるため 2 通目以降は短い遅延を入れる
-    if (i > 0) await new Promise(r => setTimeout(r, 300))
+  // 1通にまとめて送信（長すぎる場合は末尾を省略）
+  const MAX_CHARS = 700
+  const body = text.length > MAX_CHARS
+    ? text.slice(0, MAX_CHARS) + '\n…（以下省略）'
+    : text
+  console.log(`[LINEWORKS] sending 1 message (${body.length} chars${text.length > MAX_CHARS ? `, truncated from ${text.length}` : ''})`)
 
-    let result: SendResult
-    if (hasBotCreds) {
-      result = await sendViaBotApi(chunk)
-    } else if (process.env.LINEWORKS_WEBHOOK_URL) {
-      result = await sendViaWebhook(chunk)
-    } else {
-      console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
-      return { ok: false, error: 'not_configured' }
-    }
-    lastResult = result
-    if (!result.ok) {
-      console.error(
-        `[LINEWORKS] chunk ${i + 1}/${chunks.length} failed (chunk len=${chunk.length}); aborting remaining chunks. preview: ${chunk.slice(0, 80).replace(/\n/g, ' / ')}`
-      )
-      return { ...result, error: `chunk_${i + 1}_of_${chunks.length}_failed: ${result.error || ''}` }
-    }
-  }
-  return lastResult
+  if (hasBotCreds) return sendViaBotApi(body)
+  if (process.env.LINEWORKS_WEBHOOK_URL) return sendViaWebhook(body)
+  console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
+  return { ok: false, error: 'not_configured' }
 }
 
 export type LineWorksTaskInfo = {
