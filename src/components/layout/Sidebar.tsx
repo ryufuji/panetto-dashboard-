@@ -11,7 +11,18 @@ import {
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-const navigation = [
+type NavChild = { name: string; href: string; icon?: any; adminOnly?: boolean }
+type NavItem = {
+  name: string
+  href?: string
+  icon: any
+  external?: boolean
+  adminOnly?: boolean
+  managerOnly?: boolean
+  children?: NavChild[]
+}
+
+const navigation: NavItem[] = [
   { name: 'ダッシュボード', href: '/dashboard', icon: LayoutDashboard },
   { name: '日報管理', icon: FileText, children: [
     { name: '日報一覧', href: '/dashboard/reports' },
@@ -32,15 +43,15 @@ const navigation = [
     { name: '新規申請', href: '/dashboard/approval-requests/new' },
     { name: '承認設定', href: '/dashboard/approval-requests/settings' },
   ]},
-  { name: 'パフォーマンス分析', icon: BarChart3, children: [
+  { name: 'パフォーマンス分析', icon: BarChart3, managerOnly: true, children: [
     { name: '社員ランキング', href: '/dashboard/performance' },
     { name: '部署比較', href: '/dashboard/performance/departments' },
   ]},
-  { name: '店舗運営', icon: Store, children: [
+  { name: '店舗運営', icon: Store, managerOnly: true, children: [
     { name: '店舗一覧', href: '/dashboard/stores' },
     { name: '新規店舗', href: '/dashboard/stores/new' },
   ]},
-  { name: '組織管理', icon: Building2, children: [
+  { name: '組織管理', icon: Building2, adminOnly: true, children: [
     { name: '組織図', href: '/dashboard/organization/chart' },
     { name: '部署管理', href: '/dashboard/organization/departments' },
     { name: '拠点管理', href: '/dashboard/organization/offices' },
@@ -50,8 +61,8 @@ const navigation = [
   ]},
   { name: '設定', icon: Settings, children: [
     { name: 'プロフィール', href: '/dashboard/settings/profile' },
-    { name: 'システム設定', href: '/dashboard/settings/system' },
-    { name: '監査ログ', href: '/dashboard/settings/audit-logs' },
+    { name: 'システム設定', href: '/dashboard/settings/system', adminOnly: true },
+    { name: '監査ログ', href: '/dashboard/settings/audit-logs', adminOnly: true },
   ]},
   { name: 'バグ報告', href: 'https://docs.google.com/spreadsheets/d/1j7C9Rhs8tWsxECq7BoNdyF0Nb2KfRRh47qeMDSllwl4/edit?gid=762673576#gid=762673576', icon: Bug, external: true },
 ]
@@ -61,17 +72,34 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '申請・承認'])
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
+  const [userRole, setUserRole] = useState<string>('employee')
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
+      supabase.from('users').select('role').eq('id', user.id).single()
+        .then(({ data }) => { if (data?.role) setUserRole(data.role) })
       fetch('/api/approval-requests?tab=pending_approval')
         .then(r => r.json())
         .then(j => setPendingApprovalCount(j.data?.length || 0))
         .catch(() => {})
     })
   }, [])
+
+  const isAdmin = userRole === 'admin'
+  const isManagerOrAbove = userRole === 'admin' || userRole === 'manager'
+
+  const visibleNav = navigation
+    .filter(item => {
+      if (item.adminOnly && !isAdmin) return false
+      if (item.managerOnly && !isManagerOrAbove) return false
+      return true
+    })
+    .map(item => ({
+      ...item,
+      children: item.children?.filter(c => !c.adminOnly || isAdmin),
+    }))
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev =>
@@ -98,7 +126,7 @@ export function Sidebar() {
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-        {navigation.map((item) => {
+        {visibleNav.map((item) => {
           if (item.href) {
             const isActive = !item.external && pathname === item.href
             const linkProps = item.external
