@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ChevronDown, ClipboardCopy, ClipboardList, Search, Loader2 } from 'lucide-react'
+import { ChevronDown, ClipboardCopy, ClipboardList, Search, Loader2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { type Task, defaultApproval } from '@/types/report'
 
@@ -86,7 +86,8 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
         task_type: pt.task_type || '',
         priority: pt.priority || 'medium',
         start_date: today,
-        due_date: pt.due_date || '',
+        // 期限切れのまま引き継ぐと即座に再び期日遅れになるため当日へ繰り上げる
+        due_date: pt.due_date && pt.due_date >= today ? pt.due_date : today,
         parent_id: null,
         approval: defaultApproval(),
       })
@@ -102,7 +103,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
           task_type: ct.task_type || '',
           priority: ct.priority || 'medium',
           start_date: today,
-          due_date: ct.due_date || '',
+          due_date: ct.due_date && ct.due_date >= today ? ct.due_date : today,
           parent_id: localId,
           approval: defaultApproval(),
         })
@@ -119,7 +120,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
     })
   }
 
-  const fetchAndApply = async (mode: 'incomplete_latest' | 'incomplete_all') => {
+  const fetchAndApply = async (mode: 'incomplete_latest' | 'incomplete_all' | 'overdue') => {
     setLoading(true)
     try {
       const res = await fetch(`/api/reports/carry-over-tasks?mode=${mode}`)
@@ -128,7 +129,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
 
       const data: CarryOverTask[] = json.data || []
       if (data.length === 0) {
-        toast.info('引き継ぎ可能なタスクがありません')
+        toast.info(mode === 'overdue' ? '期日遅れのタスクはありません' : '引き継ぎ可能なタスクがありません')
         return
       }
 
@@ -236,6 +237,10 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
           <DropdownMenuItem onClick={() => fetchAndApply('incomplete_all')}>
             <ClipboardList className="mr-2 h-4 w-4" />
             全レポートの未完了タスク
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => fetchAndApply('overdue')}>
+            <AlertTriangle className="mr-2 h-4 w-4 text-red-500" />
+            期日遅れタスク
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={openCompletedDialog}>

@@ -810,6 +810,33 @@ export default function NewReportPage() {
       const orgId = cachedOrgId
       if (!userId || !orgId) throw new Error('認証エラー')
 
+      if (status === 'submitted') {
+        if (!startTime) {
+          toast.error('開始時間を入力してください')
+          setLoading(false)
+          return
+        }
+        if (!endTime) {
+          toast.error('終了時間を入力してください')
+          setLoading(false)
+          return
+        }
+        const titledParents = tasks.filter(t => !t.parent_id && t.title.trim())
+        if (titledParents.length === 0) {
+          toast.error('タスクを1件以上入力してください')
+          setLoading(false)
+          return
+        }
+        for (const pt of titledParents) {
+          const hasChildren = tasks.some(t => t.parent_id === pt.id && t.title.trim())
+          if (!hasChildren && !pt.estimated_hours) {
+            toast.error(`タスク「${pt.title}」の工数(h)を入力してください`)
+            setLoading(false)
+            return
+          }
+        }
+      }
+
       // Validate approval forms
       const parentTasksWithApproval = tasks.filter(t => !t.parent_id && t.title && t.approval.enabled)
       for (const pt of parentTasksWithApproval) {

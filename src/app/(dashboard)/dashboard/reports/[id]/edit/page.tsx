@@ -438,6 +438,19 @@ export default function EditReportPage() {
         .eq('id', user.id)
         .single()
 
+      if (status === 'submitted') {
+        if (!workHours) {
+          toast.error('稼働時間を入力してください')
+          setSaving(false)
+          return
+        }
+        if (!tasks.some(t => !t.parent_id && t.title.trim())) {
+          toast.error('タスクを1件以上入力してください')
+          setSaving(false)
+          return
+        }
+      }
+
       // Validate approval forms
       const parentTasksWithApproval = tasks.filter(t => !t.parent_id && t.title.trim() && t.approval.enabled && !t.approval.existing_status)
       for (const pt of parentTasksWithApproval) {
@@ -714,7 +727,7 @@ export default function EditReportPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>稼働時間</Label>
+              <Label>稼働時間 <span className="text-red-500">(*)</span></Label>
               <Input type="number" step="0.5" placeholder="8.0" value={workHours} onChange={e => setWorkHours(e.target.value)} />
             </div>
             <div className="space-y-2">

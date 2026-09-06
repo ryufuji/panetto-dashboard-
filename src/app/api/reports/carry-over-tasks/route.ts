@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const mode = searchParams.get('mode') || 'incomplete_latest'
 
-    if (!['incomplete_latest', 'incomplete_all', 'completed'].includes(mode)) {
+    if (!['incomplete_latest', 'incomplete_all', 'completed', 'overdue'].includes(mode)) {
       return NextResponse.json({ error: '無効なモードです' }, { status: 400 })
     }
 
@@ -105,9 +105,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Filter by mode
+    const today = new Date().toISOString().split('T')[0]
     const filtered = mode === 'incomplete_all'
       ? uniqueParentTasks.filter(t => t.progress_rate < 100)
-      : uniqueParentTasks.filter(t => t.progress_rate >= 100)
+      : mode === 'overdue'
+        ? uniqueParentTasks.filter(t => t.progress_rate < 100 && t.due_date && t.due_date < today)
+        : uniqueParentTasks.filter(t => t.progress_rate >= 100)
 
     // Attach children and report_date
     const result = filtered.map(pt => {
