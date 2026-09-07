@@ -48,6 +48,7 @@ interface TaskCarryOverMenuProps {
 export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<'completed' | 'incomplete_all'>('completed')
   const [completedTasks, setCompletedTasks] = useState<CarryOverTask[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
@@ -155,18 +156,20 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
     }
   }
 
-  const openCompletedDialog = async () => {
+  const openSelectDialog = async (mode: 'completed' | 'incomplete_all') => {
+    setDialogMode(mode)
     setDialogOpen(true)
     setDialogLoading(true)
     setSelectedIds(new Set())
     setSearchQuery('')
+    setCompletedTasks([])
     try {
-      const res = await fetch('/api/reports/carry-over-tasks?mode=completed')
+      const res = await fetch(`/api/reports/carry-over-tasks?mode=${mode}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       setCompletedTasks(json.data || [])
     } catch (err: any) {
-      toast.error(err.message || '完了タスクの取得に失敗しました')
+      toast.error(err.message || 'タスクの取得に失敗しました')
       setCompletedTasks([])
     } finally {
       setDialogLoading(false)
@@ -192,7 +195,8 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
       return
     }
 
-    const { newTasks, skippedCount } = buildNewTasks(selected, true)
+    // 完了タスクは進捗を 0 に戻して再開、未完了タスクは前回の進捗を引き継ぐ
+    const { newTasks, skippedCount } = buildNewTasks(selected, dialogMode === 'completed')
 
     if (newTasks.length === 0) {
       toast.info('全てのタスクが既に追加済みです')
@@ -243,7 +247,11 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
             期日遅れタスク
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={openCompletedDialog}>
+          <DropdownMenuItem onClick={() => openSelectDialog('incomplete_all')}>
+            <Search className="mr-2 h-4 w-4" />
+            未完了タスクから選択...
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => openSelectDialog('completed')}>
             <Search className="mr-2 h-4 w-4" />
             完了タスクから選択...
           </DropdownMenuItem>
@@ -253,9 +261,11 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>完了タスクから選択</DialogTitle>
+            <DialogTitle>{dialogMode === 'completed' ? '完了タスクから選択' : '未完了タスクから選択'}</DialogTitle>
             <DialogDescription>
-              過去90日間の完了タスクから選択して追加できます。進捗率は0%にリセットされます。
+              {dialogMode === 'completed'
+                ? '過去90日間の完了タスクから選択して追加できます。進捗率は0%にリセットされます。'
+                : '過去の提出済み日報にある未完了タスク（進捗100%未満）から選択して追加できます。進捗率は前回の値を引き継ぎます。'}
             </DialogDescription>
           </DialogHeader>
 
@@ -272,7 +282,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
               </div>
             ) : filteredCompletedTasks.length === 0 ? (
               <div className="text-center py-8 text-sm text-muted-foreground">
-                {searchQuery ? '検索結果がありません' : '完了タスクがありません'}
+                {searchQuery ? '検索結果がありません' : dialogMode === 'completed' ? '完了タスクがありません' : '未完了タスクがありません'}
               </div>
             ) : (
               <ScrollArea className="h-[300px] rounded-md border p-2">
@@ -291,6 +301,7 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
                         <p className="text-sm font-medium truncate">{task.title}</p>
                         <p className="text-xs text-muted-foreground">
                           {task.report_date}
+                          {dialogMode === 'incomplete_all' && ` / 進捗${task.progress_rate}%`}
                           {task.children?.length > 0 && ` / 子タスク${task.children.length}件`}
                         </p>
                       </div>
