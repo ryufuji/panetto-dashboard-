@@ -27,6 +27,8 @@ import crypto from 'node:crypto'
 type SendOptions = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   flexContent?: any
+  /** 上限超過で本文を切り詰めたときに末尾へ付ける案内（全文への導線など） */
+  truncateFooter?: string
 }
 
 type SendResult = {
@@ -300,17 +302,26 @@ export async function sendLineWorksMessage(
     return { ok: false, error: 'not_configured' }
   }
 
-  // 1通にまとめて送信（長すぎる場合は末尾を省略）
-  const MAX_CHARS = 700
-  const body = text.length > MAX_CHARS
-    ? text.slice(0, MAX_CHARS) + '\n…（以下省略）'
-    : text
-  console.log(`[LINEWORKS] sending 1 message (${body.length} chars${text.length > MAX_CHARS ? `, truncated from ${text.length}` : ''})`)
+  if (!hasBotCreds && !process.env.LINEWORKS_WEBHOOK_URL) {
+    console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
+    return { ok: false, error: 'not_configured' }
+  }
+  const send = (body: string) => hasBotCreds ? sendViaBotApi(body) : sendViaWebhook(body)
 
-  if (hasBotCreds) return sendViaBotApi(body)
-  if (process.env.LINEWORKS_WEBHOOK_URL) return sendViaWebhook(body)
-  console.warn('[LINEWORKS] No credentials configured. Skipping message send.')
-  return { ok: false, error: 'not_configured' }
+  // 1通にまとめて送信する。公式上限は text 2,000 字だが 1,800 字で 400 になった実績があるため
+  // 1,400 字を一次上限とし、それでも 400 なら 600 字まで詰めて再送する（分割はしない）。
+  const footer = options?.truncateFooter ?? '…（以下省略）'
+  const clamp = (max: number) =>
+    text.length <= max ? text : text.slice(0, Math.max(0, max - footer.length - 1)) + '\n' + footer
+
+  const first = clamp(1400)
+  console.log(`[LINEWORKS] sending 1 message (${first.length} chars${first.length < text.length ? `, truncated from ${text.length}` : ''})`)
+  const result = await send(first)
+  if (result.ok || result.status !== 400 || first.length <= 600) return result
+
+  const second = clamp(600)
+  console.warn(`[LINEWORKS] 400 at ${first.length} chars; retrying with ${second.length} chars`)
+  return send(second)
 }
 
 export type LineWorksTaskInfo = {
