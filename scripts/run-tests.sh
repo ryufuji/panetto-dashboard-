@@ -571,6 +571,89 @@ assert_status "SET-FT-005" "監査ログ取得" "200" "$STATUS"
 echo ""
 
 # =============================================================================
+# 10. EXTERNAL API TESTS (外部連携API)
+# =============================================================================
+echo "--- 10. 外部連携APIテスト ---"
+
+# api_token を持つユーザーを1人選ぶ（なければスキップ）
+EXT_USER=$(curl -s "$API/users?api_token=not.is.null&select=id,api_token,organization_id&limit=1" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $SRK" \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print('|'.join([d[0]['id'],d[0]['api_token'],d[0]['organization_id']]) if d else '')" 2>/dev/null)
+EXT_USER_ID=$(echo "$EXT_USER" | cut -d'|' -f1)
+EXT_TOKEN=$(echo "$EXT_USER" | cut -d'|' -f2)
+EXT_ORG_ID=$(echo "$EXT_USER" | cut -d'|' -f3)
+EXT_DRAFT_DATE="2099-12-31"
+EXT_LOCKED_DATE="2099-12-30"
+EXT_DRAFT_ID=""
+EXT_LOCKED_ID=""
+
+if [ -z "$EXT_TOKEN" ]; then
+  RESULTS+="SKIP|EXT-FT-000|外部API: api_token 保持ユーザーなし|skipped\n"
+  SKIP=$((SKIP + 1))
+else
+  # 初回コンパイル待ち（dev サーバーのルート初回応答が遅いため）
+  curl -s -o /dev/null --max-time 60 -X POST "$BASE_URL/api/external/draft" >/dev/null 2>&1
+  curl -s -o /dev/null --max-time 60 -X PATCH "$BASE_URL/api/external/draft/warmup" >/dev/null 2>&1
+
+  # EXT-ET-001: Bearer なし → 401
+  split_response "$(http_post "$BASE_URL/api/external/draft" -H "Content-Type: application/json" \
+    -d '{"report_date":"'"$EXT_DRAFT_DATE"'"}')"
+  assert_status "EXT-ET-001" "外部API: Bearer なし → 401" "401" "$STATUS"
+
+  # EXT-FT-002: 下書き新規作成 → 201（priority に日本語、子タスク付き）
+  split_response "$(http_post "$BASE_URL/api/external/draft" -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" \
+    -d '{"report_date":"'"$EXT_DRAFT_DATE"'","title":"外部APIテスト","tasks":[{"title":"タスクA","priority":"高","children":[{"title":"子A"}]}]}')"
+  assert_status "EXT-FT-002" "外部API: 下書き新規作成 → 201" "201" "$STATUS"
+  assert_contains "EXT-FT-002b" "外部API: created=true" '"created":true' "$BODY"
+  EXT_DRAFT_ID=$(echo "$BODY" | python3 -c "import sys,json;print(json.load(sys.stdin).get('report_id',''))" 2>/dev/null)
+
+  # EXT-FT-003: priority「高」は medium に置換される
+  split_response "$(http_get "$API/report_tasks?report_id=eq.$EXT_DRAFT_ID&parent_task_id=is.null&select=priority" \
+    -H "apikey: $ANON" -H "Authorization: Bearer $SRK")"
+  assert_contains "EXT-FT-003" "外部API: priority「高」→ medium" '"medium"' "$BODY"
+
+  # EXT-FT-004: 同日再POST → 200 で上書き（created=false）
+  split_response "$(http_post "$BASE_URL/api/external/draft" -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" \
+    -d '{"report_date":"'"$EXT_DRAFT_DATE"'","title":"外部APIテスト2","tasks":[{"title":"タスクB"}]}')"
+  assert_status "EXT-FT-004" "外部API: 同日再POST → 200 上書き" "200" "$STATUS"
+  assert_contains "EXT-FT-004b" "外部API: created=false" '"created":false' "$BODY"
+
+  # EXT-FT-005: tasks は全置換（タスクA と子A が消え、タスクB のみ）
+  split_response "$(http_get "$API/report_tasks?report_id=eq.$EXT_DRAFT_ID&select=title" \
+    -H "apikey: $ANON" -H "Authorization: Bearer $SRK")"
+  assert_contains "EXT-FT-005" "外部API: 再POST後にタスクB存在" 'タスクB' "$BODY"
+  assert_not_contains "EXT-FT-005b" "外部API: 再POST後にタスクA消滅" 'タスクA' "$BODY"
+
+  # EXT-ET-006: 提出済み日報がある日付へ POST → 409（提出済みは無傷）
+  EXT_LOCKED_ID=$(curl -s -X POST "$API/reports" -H "apikey: $ANON" -H "Authorization: Bearer $SRK" \
+    -H "Content-Type: application/json" -H "Prefer: return=representation" \
+    -d '{"user_id":"'"$EXT_USER_ID"'","organization_id":"'"$EXT_ORG_ID"'","report_date":"'"$EXT_LOCKED_DATE"'","status":"submitted","title":"外部APIテスト提出済"}' \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if isinstance(d,list) and d else '')" 2>/dev/null)
+  split_response "$(http_post "$BASE_URL/api/external/draft" -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" \
+    -d '{"report_date":"'"$EXT_LOCKED_DATE"'","title":"上書き試行"}')"
+  assert_status "EXT-ET-006" "外部API: 提出済み日付へPOST → 409" "409" "$STATUS"
+  split_response "$(http_get "$API/reports?id=eq.$EXT_LOCKED_ID&select=title,status" \
+    -H "apikey: $ANON" -H "Authorization: Bearer $SRK")"
+  assert_contains "EXT-ET-007" "外部API: 提出済み日報は無傷" '外部APIテスト提出済' "$BODY"
+
+  # EXT-ET-008: 提出済み ID へ PATCH → 404
+  RESP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X PATCH "$BASE_URL/api/external/draft/$EXT_LOCKED_ID" \
+    -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" -d '{"title":"x"}' 2>/dev/null)
+  assert_status "EXT-ET-008" "外部API: 提出済みへPATCH → 404" "404" "$RESP"
+
+  # 外部API テストデータのクリーンアップ
+  for rid in "$EXT_DRAFT_ID" "$EXT_LOCKED_ID"; do
+    if [ -n "$rid" ]; then
+      curl -s -X DELETE "$API/report_tasks?report_id=eq.$rid" -H "apikey: $ANON" -H "Authorization: Bearer $SRK" >/dev/null 2>&1
+      curl -s -X DELETE "$API/reports?id=eq.$rid" -H "apikey: $ANON" -H "Authorization: Bearer $SRK" >/dev/null 2>&1
+    fi
+  done
+  echo "  Cleaned up external API test reports"
+fi
+
+echo ""
+
+# =============================================================================
 # CLEANUP
 # =============================================================================
 echo "--- クリーンアップ ---"

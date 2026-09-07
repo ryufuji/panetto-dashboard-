@@ -1,6 +1,6 @@
 /**
  * GET  /api/external/draft  — 自分の下書き一覧取得
- * POST /api/external/draft  — 下書き作成（同日に下書きが既存なら上書きUPSERT）
+ * POST /api/external/draft  — 下書き作成（同日に下書きが既存なら上書きUPSERT、提出済み・承認済みがあれば 409）
  *
  * 認証: Authorization: Bearer <api_token>
  *   - api_token は /dashboard/settings/profile の「API連携」セクションで確認・再生成できます
@@ -71,14 +71,25 @@ export async function POST(req: NextRequest) {
 
   const supabase = createExternalClient()
 
-  // 同日の既存下書きを確認
-  const { data: existing } = await supabase
+  // 同日の既存日報を確認。提出済み・承認済みがあれば重複 draft を作らず拒否する
+  const { data: sameDay } = await supabase
     .from('reports')
-    .select('id')
+    .select('id, status')
     .eq('user_id', user.id)
     .eq('report_date', report_date)
-    .eq('status', 'draft')
-    .maybeSingle()
+
+  const locked = (sameDay ?? []).find(r => r.status === 'submitted' || r.status === 'approved')
+  if (locked) {
+    return NextResponse.json(
+      {
+        error: `${report_date} には提出済みの日報が既にあります。提出済みの日報はAPIから変更できません。修正する場合はダッシュボードの日報編集画面から行ってください`,
+        report_id: locked.id,
+      },
+      { status: 409 }
+    )
+  }
+
+  const existing = (sameDay ?? []).find(r => r.status === 'draft') ?? null
 
   // 更新可能なフィールドのみ（owner フィールドは更新対象外）
   const mutableFields: Record<string, any> = {
