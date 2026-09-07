@@ -1,7 +1,7 @@
 # 業務日報ダッシュボード 外部連携API 仕様書
 
 最終更新: 2026-09-07
-対象バージョン: コミット `b61d4dd` 以降（`POST /api/external/draft` の 409 応答を含む）
+対象バージョン: 2026-09-07 デプロイ版（`POST /api/external/draft` の 409 応答、暦日検証の修正を含む）
 
 この文書は実装（`src/app/api/external/` および `src/lib/external-api.ts`）から起こしています。挙動に疑問がある場合はこの文書ではなく実装が正です。
 
@@ -67,7 +67,7 @@ Authorization: Bearer <api_token>
 | 日付（`report_date`, `due_date`, `from`, `to`） | `YYYY-MM-DD` | `2026-09-07` |
 | 時刻（`start_time`, `end_time`） | `HH:MM` | `09:30` |
 
-`report_date` は形式に加えて暦日として妥当かも検証されます（`2026-02-30` は 400）。
+`report_date` は形式に加えて暦日として実在するかも検証されます（`2026-02-30` は 400）。`GET /reports` の `from` / `to` も同様です。
 
 ### 3.4 値の正規化（サーバー側で自動補正されるもの）
 
@@ -105,7 +105,7 @@ Authorization: Bearer <api_token>
       "id": "…", "user_id": "…", "organization_id": "…", "department_id": "…",
       "report_date": "2026-09-07", "status": "submitted",
       "title": "…", "start_time": "09:00:00", "end_time": "18:00:00", "work_hours": 8,
-      "progress_rate": 60, "next_day_plan": "…", "summary": "…", "issues": "…",
+      "progress_rate": 60, "next_day_plan": "…", "template_id": null, "lineworks_notified_at": "…",
       "submitted_at": "…", "created_at": "…", "updated_at": "…",
       "user": { "name": "氏名", "email": "…" },
       "tasks": [ … ],            // include=tasks 時のみ
@@ -118,13 +118,13 @@ Authorization: Bearer <api_token>
 }
 ```
 
-`reports` テーブルの全カラムがそのまま返ります。上記は主要項目の抜粋です。
+`reports` テーブルの全カラム（上記 17 項目）がそのまま返ります。画面にある「本日の成果」「課題」「勤務場所」「体調」は `reports` テーブルに列が無いため含まれません。
 
 ### エラー
 
 | 状態 | 条件 |
 |---|---|
-| 400 | `from` / `to` が `YYYY-MM-DD` 形式でない |
+| 400 | `from` / `to` が `YYYY-MM-DD` 形式でない、または実在しない日付（`2026-02-30` 等） |
 | 401 | トークン不正 |
 | 500 | DB エラー |
 
@@ -180,7 +180,7 @@ Authorization: Bearer <api_token>
 | `tasks` | 配列 | — | （6.3 参照） | 親タスクの配列 |
 | `planned_tasks` | 配列 | — | （6.3 参照） | 翌日予定タスクの配列 |
 
-`summary`（本日の成果）、`issues`（課題）、`work_location`、`condition` は **API からは設定できません**（送っても無視されます）。
+`summary`（本日の成果）、`issues`（課題）、`work_location`（勤務場所）、`condition`（体調）は **API から設定できません**（送っても無視されます）。これらは画面上に入力欄がありますが `reports` テーブルに列が存在せず、画面からも保存されていません。
 
 #### `tasks[]` — 親タスク
 
@@ -358,7 +358,7 @@ curl -X POST https://panetto-dashboard.vercel.app/api/external/draft \
 3. **未知のキーはエラーになりません。** 投入後に `GET /reports?include=tasks`（提出後）または画面で確認してください。
 4. **`priority` は英語の 3 値のみ。** 日本語を送ると `medium` になります。
 5. **`due_date` を省略すると期限なしになります。** 画面から作成した場合の既定値（当日）とは違います。
-6. **`summary` / `issues` / `work_location` / `condition` は API から設定できません。**
+6. **`summary` / `issues` / `work_location` / `condition` は API から設定できず、`GET /reports` にも含まれません**（`reports` テーブルに列がありません）。
 7. `GET /reports` は**自組織全員**の日報を返します。特定ユーザーに絞る場合は `user_id` でクライアント側フィルタしてください。
 8. トークンはユーザーの権限で動作します。トークンが漏れた場合はプロフィール画面から即時再生成してください。
 
