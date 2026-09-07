@@ -600,6 +600,11 @@ else
     -d '{"report_date":"'"$EXT_DRAFT_DATE"'"}')"
   assert_status "EXT-ET-001" "外部API: Bearer なし → 401" "401" "$STATUS"
 
+  # EXT-ET-009: 暦日として存在しない日付 → 400（Date.parse は 2/30 を 3/2 に繰り上げるため往復検証が必要）
+  split_response "$(http_post "$BASE_URL/api/external/draft" -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" \
+    -d '{"report_date":"2026-02-30"}')"
+  assert_status "EXT-ET-009" "外部API: 暦日不正 2026-02-30 → 400" "400" "$STATUS"
+
   # EXT-FT-002: 下書き新規作成 → 201（priority に日本語、子タスク付き）
   split_response "$(http_post "$BASE_URL/api/external/draft" -H "Authorization: Bearer $EXT_TOKEN" -H "Content-Type: application/json" \
     -d '{"report_date":"'"$EXT_DRAFT_DATE"'","title":"外部APIテスト","tasks":[{"title":"タスクA","priority":"高","children":[{"title":"子A"}]}]}')"

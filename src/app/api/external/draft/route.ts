@@ -30,7 +30,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveUserByToken, createExternalClient, insertTasksForReport } from '@/lib/external-api'
+import { resolveUserByToken, createExternalClient, insertTasksForReport, isValidISODate } from '@/lib/external-api'
 
 /** GET /api/external/draft */
 export async function GET(req: NextRequest) {
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { report_date, title, start_time, end_time, work_hours, next_day_plan, tasks, planned_tasks } = body
 
   // フォーマット + 暦日バリデーション
-  if (!report_date || !/^\d{4}-\d{2}-\d{2}$/.test(report_date) || isNaN(Date.parse(report_date))) {
+  if (!isValidISODate(report_date)) {
     return NextResponse.json({ error: 'report_date は有効な YYYY-MM-DD 形式で必須です' }, { status: 400 })
   }
 

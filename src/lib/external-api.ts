@@ -33,6 +33,16 @@ export function createExternalClient() {
   return adminClient()
 }
 
+/**
+ * YYYY-MM-DD 形式かつ暦日として実在する日付か。
+ * Date.parse は 2026-02-30 を 3/2 に繰り上げて受理してしまうため、往復変換で一致を確認する。
+ */
+export function isValidISODate(s: unknown): s is string {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(s + 'T00:00:00Z')
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
+
 type TaskInput = {
   title?: string
   description?: string

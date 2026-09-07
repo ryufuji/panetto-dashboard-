@@ -16,7 +16,7 @@
  *   include=tasks 時は tasks: Task[], planned_tasks: PlannedTask[] も付く
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveUserByToken, createExternalClient } from '@/lib/external-api'
+import { resolveUserByToken, createExternalClient, isValidISODate } from '@/lib/external-api'
 
 export async function GET(req: NextRequest) {
   const user = await resolveUserByToken(req)
@@ -38,8 +38,8 @@ export async function GET(req: NextRequest) {
   const offset = Math.max(0,               parseInt(searchParams.get('offset') || '0'))
   const includeTasks = searchParams.get('include') === 'tasks'
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-    return NextResponse.json({ error: 'from / to は YYYY-MM-DD 形式で指定してください' }, { status: 400 })
+  if (!isValidISODate(from) || !isValidISODate(to)) {
+    return NextResponse.json({ error: 'from / to は実在する日付を YYYY-MM-DD 形式で指定してください' }, { status: 400 })
   }
 
   const supabase = createExternalClient()
