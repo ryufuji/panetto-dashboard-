@@ -48,6 +48,8 @@ export default function EditReportPage() {
   const [reportDate, setReportDate] = useState('')
   const [title, setTitle] = useState('')
   const [workHours, setWorkHours] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   // 全体進捗率は親タスクの進捗率の平均から自動計算する（手動入力廃止）
   const [nextDayPlan, setNextDayPlan] = useState('')
   const [workLocation, setWorkLocation] = useState('')
@@ -76,6 +78,16 @@ export default function EditReportPage() {
     fetchReport()
     loadApprovalData()
   }, [id])
+
+  // 稼働時間の自動計算（開始時間・終了時間から）。新規作成ページと同じ規則
+  useEffect(() => {
+    if (!startTime || !endTime) return
+    const [sh, sm] = startTime.split(':').map(Number)
+    const [eh, em] = endTime.split(':').map(Number)
+    let diffMin = (eh * 60 + em) - (sh * 60 + sm)
+    if (diffMin < 0) diffMin += 24 * 60  // 日跨ぎ
+    setWorkHours(String(Math.round(diffMin / 60 * 10) / 10))
+  }, [startTime, endTime])
 
   const loadApprovalData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -139,6 +151,8 @@ export default function EditReportPage() {
       setReportDate(report.report_date || '')
       setTitle(report.title || '')
       setWorkHours(report.work_hours?.toString() || '')
+      setStartTime(report.start_time ? String(report.start_time).slice(0, 5) : '')
+      setEndTime(report.end_time ? String(report.end_time).slice(0, 5) : '')
       setNextDayPlan(report.next_day_plan || '')
       setWorkLocation(report.work_location || '')
       setCondition(report.condition || '')
@@ -504,6 +518,8 @@ export default function EditReportPage() {
           report_date: reportDate,
           title: title || null,
           work_hours: workHours ? parseFloat(workHours) : null,
+          start_time: startTime || null,
+          end_time: endTime || null,
           progress_rate: computedProgressRate,
           next_day_plan: nextDayPlan || null,
           status,
@@ -727,8 +743,25 @@ export default function EditReportPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
+              <Label>開始時間</Label>
+              <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+              <div className="flex flex-wrap gap-1">
+                {['09:00', '10:00', '11:00', '12:00', '13:00'].map(t => (
+                  <button key={t} type="button" onClick={() => setStartTime(t)}
+                    className="rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground">
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>終了時間</Label>
+              <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+            </div>
+            <div className="space-y-2">
               <Label>稼働時間 <span className="text-red-500">(*)</span></Label>
               <Input type="number" step="0.5" placeholder="8.0" value={workHours} onChange={e => setWorkHours(e.target.value)} />
+              <p className="text-xs text-muted-foreground">開始・終了時間を入れると自動計算されます</p>
             </div>
             <div className="space-y-2">
               <Label>全体進捗率（%）</Label>
@@ -808,6 +841,10 @@ export default function EditReportPage() {
                 <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
                 <Textarea placeholder="備考・メモ（任意）" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
+                <div>
+                  <Label className="text-xs">進行中・実績URL（任意）</Label>
+                  <Input type="url" placeholder="https://..." value={task.actual_url || ''} onChange={e => updateTask(task.id, 'actual_url', e.target.value)} />
+                </div>
                 <div className="grid grid-cols-6 gap-2">
                   <div>
                     <Label className="text-xs">工数(h)</Label>
