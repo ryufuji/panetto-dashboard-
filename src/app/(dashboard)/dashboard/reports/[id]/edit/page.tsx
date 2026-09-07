@@ -810,7 +810,7 @@ export default function EditReportPage() {
                 <Textarea placeholder="備考・メモ（任意）" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
                 <div className="grid grid-cols-6 gap-2">
                   <div>
-                    <Label className="text-xs">見積(h)</Label>
+                    <Label className="text-xs">工数(h)</Label>
                     <Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
                   </div>
                   <div>
