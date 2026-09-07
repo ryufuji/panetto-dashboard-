@@ -266,6 +266,11 @@ export default function ProfilePage() {
       { "title": "業務A", "estimated_hours": 2, "progress_rate": 0 }
     ]
   }'`}</pre>
+            <ul className="mt-2 list-disc space-y-0.5 pl-4">
+              <li>同じ日付に下書きがある場合は上書きされます（<code className="rounded bg-slate-100 px-1">tasks</code> を渡すとタスクは全置換）</li>
+              <li>同じ日付に提出済みの日報がある場合は作成されず 409 エラーになります</li>
+              <li>受け付けるキーの一覧など詳細は「外部連携API仕様書」を参照してください</li>
+            </ul>
           </div>
         </CardContent>
       </Card>
