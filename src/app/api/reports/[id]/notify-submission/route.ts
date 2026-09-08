@@ -125,11 +125,7 @@ export async function POST(
     })
 
     console.log(`[NOTIFY] Sending message (length=${message.length}) for report ${id}`)
-    // 上限超過時は省略せず、ダッシュボードの日報ページで全文を読める導線を付ける
-    const reportUrl = `${request.nextUrl.origin}/dashboard/reports/${id}`
-    const result = await sendLineWorksMessage(message, {
-      truncateFooter: `…（文字数上限のため以下省略）\n全文はこちら: ${reportUrl}`,
-    })
+    const result = await sendLineWorksMessage(message)
 
     // 送信成功時にタイムスタンプ記録（再送防止）
     if (result.ok) {

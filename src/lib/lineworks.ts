@@ -27,8 +27,6 @@ import crypto from 'node:crypto'
 type SendOptions = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   flexContent?: any
-  /** 上限超過で本文を切り詰めたときに末尾へ付ける案内（全文への導線など） */
-  truncateFooter?: string
 }
 
 type SendResult = {
@@ -241,13 +239,13 @@ async function sendViaWebhook(text: string, options?: SendOptions): Promise<Send
 }
 
 /**
- * LINE Works Bot API の text content は 1 メッセージ約 1000 字 / 約 2000 バイト
- * 程度までの制限があり、これを超えると 400 で拒否される。
- * 日本語は 1 文字 3 バイト (UTF-8) なので、文字数ではなくバイト数で見ると
- * すぐに上限に達する。安全マージンを取って 600 字でチャンク分割する
- * (600 字 ≒ 1800 バイト = 制限の 90%)
+ * LINE WORKS Bot API のテキストメッセージは公式仕様で最大 2,000 字
+ * (https://developers.worksmobile.com/jp/docs/bot-send-text)。
+ * 行単位で 2,000 字以内のチャンクに分割する。ほとんどの日報は 1 通に収まる。
  */
-function splitMessage(text: string, maxLen: number = 600): string[] {
+const LINEWORKS_TEXT_MAX = 2000
+
+function splitMessage(text: string, maxLen: number = LINEWORKS_TEXT_MAX): string[] {
   if (text.length <= maxLen) return [text]
   const lines = text.split('\n')
   const chunks: string[] = []
@@ -308,20 +306,37 @@ export async function sendLineWorksMessage(
   }
   const send = (body: string) => hasBotCreds ? sendViaBotApi(body) : sendViaWebhook(body)
 
-  // 1通にまとめて送信する。公式上限は text 2,000 字だが 1,800 字で 400 になった実績があるため
-  // 1,400 字を一次上限とし、それでも 400 なら 600 字まで詰めて再送する（分割はしない）。
-  const footer = options?.truncateFooter ?? '…（以下省略）'
-  const clamp = (max: number) =>
-    text.length <= max ? text : text.slice(0, Math.max(0, max - footer.length - 1)) + '\n' + footer
-
-  const first = clamp(1400)
-  console.log(`[LINEWORKS] sending 1 message (${first.length} chars${first.length < text.length ? `, truncated from ${text.length}` : ''})`)
-  const result = await send(first)
-  if (result.ok || result.status !== 400 || first.length <= 600) return result
-
-  const second = clamp(600)
-  console.warn(`[LINEWORKS] 400 at ${first.length} chars; retrying with ${second.length} chars`)
-  return send(second)
+  // 2,000 字以内なら 1 通、超える場合のみ行単位で分割して到着順を保つため逐次送信する。
+  // 過去に 1,800 字で 400 が返った実績があるため、チャンクが 400 で拒否された場合は
+  // そのチャンクだけ半分の長さに再分割して送り直す（通知全体が届かなくなるのを防ぐ）。
+  const chunks = splitMessage(text)
+  console.log(`[LINEWORKS] sending ${chunks.length} chunk(s) (total ${text.length} chars)`)
+  let lastResult: SendResult = { ok: false, error: 'no_chunks' }
+  let sent = 0
+  for (const chunk of chunks) {
+    if (sent > 0) await new Promise(r => setTimeout(r, 300))
+    let result = await send(chunk)
+    if (!result.ok && result.status === 400 && chunk.length > 100) {
+      const half = Math.ceil(chunk.length / 2)
+      console.warn(`[LINEWORKS] chunk of ${chunk.length} chars rejected with 400; re-splitting at ${half} chars`)
+      for (const piece of splitMessage(chunk, half)) {
+        if (sent > 0) await new Promise(r => setTimeout(r, 300))
+        result = await send(piece)
+        if (!result.ok) break
+        sent++
+      }
+    } else if (result.ok) {
+      sent++
+    }
+    lastResult = result
+    if (!result.ok) {
+      console.error(
+        `[LINEWORKS] send failed after ${sent} chunk(s) (chunk len=${chunk.length}); aborting. preview: ${chunk.slice(0, 80).replace(/\n/g, ' / ')}`
+      )
+      return { ...result, error: `chunk_${sent + 1}_of_${chunks.length}_failed: ${result.error || ''}` }
+    }
+  }
+  return lastResult
 }
 
 export type LineWorksTaskInfo = {
