@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, Link2, Lock, CalendarClock, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval } from '@/types/report'
+import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 
@@ -845,7 +845,7 @@ export default function EditReportPage() {
                   <Label className="text-xs">進行中・実績URL（任意）</Label>
                   <Input type="url" placeholder="https://..." value={task.actual_url || ''} onChange={e => updateTask(task.id, 'actual_url', e.target.value)} />
                 </div>
-                <div className="grid grid-cols-6 gap-2">
+                <div className="grid grid-cols-7 gap-2">
                   <div>
                     <Label className="text-xs">工数(h)</Label>
                     <Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
@@ -857,6 +857,15 @@ export default function EditReportPage() {
                   <div>
                     <Label className="text-xs">進捗(%)</Label>
                     <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ステータス</Label>
+                    <Select value={task.task_status || ''} onValueChange={v => updateTask(task.id, 'task_status', v)}>
+                      <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
+                      <SelectContent>
+                        {TASK_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label className="text-xs">優先度</Label>
