@@ -112,12 +112,27 @@ async function resolveOfficeId(admin: any, area?: string | null): Promise<string
   return data?.id || null
 }
 
-// department 名から部署IDを取得（無ければ NULL）
+// department 名から部署IDを取得。無ければ自動作成する（code は部署名と同じ。管理画面で後から変更可）
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveDepartmentId(admin: any, name?: string | null): Promise<string | null> {
-  if (!name) return null
-  const { data } = await admin.from('departments').select('id').eq('organization_id', PANETTO_ORG_ID).eq('name', name).maybeSingle()
-  return data?.id || null
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  const { data } = await admin.from('departments').select('id').eq('organization_id', PANETTO_ORG_ID).eq('name', trimmed).maybeSingle()
+  if (data?.id) return data.id
+  const { count } = await admin.from('departments').select('id', { count: 'exact', head: true }).eq('organization_id', PANETTO_ORG_ID)
+  const { data: created, error } = await admin
+    .from('departments')
+    .insert({ organization_id: PANETTO_ORG_ID, name: trimmed, code: trimmed, order_index: count ?? 0, is_active: true })
+    .select('id')
+    .single()
+  if (error) {
+    // 同時に同名が作られた場合の一意制約違反などは、再検索で拾う
+    const { data: again } = await admin.from('departments').select('id').eq('organization_id', PANETTO_ORG_ID).eq('name', trimmed).maybeSingle()
+    if (again?.id) return again.id
+    console.error('[PANET_WEBHOOK] department auto-create failed:', error.message)
+    return null
+  }
+  return created?.id || null
 }
 
 export async function POST(request: NextRequest) {
