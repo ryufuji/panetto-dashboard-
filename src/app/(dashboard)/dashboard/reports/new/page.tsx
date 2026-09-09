@@ -29,6 +29,15 @@ export default function NewReportPage() {
   const [nextDayPlan, setNextDayPlan] = useState('')
   const today = new Date().toISOString().split('T')[0]
 
+  // 件名の自動入力: 「2026-09-10(木) 業務日報」。未入力か前回の自動入力のままなら報告日に追随し、手で書き換えた件名は保持する
+  const autoTitle = (d: string) => {
+    const dt = new Date(d + 'T00:00:00')
+    return isNaN(dt.getTime()) ? '' : `${d}(${'日月火水木金土'[dt.getDay()]}) 業務日報`
+  }
+  useEffect(() => {
+    setTitle(prev => (prev.trim() === '' || /^\d{4}-\d{2}-\d{2}\(.\) 業務日報$/.test(prev)) ? autoTitle(reportDate) : prev)
+  }, [reportDate])
+
   // ───── タブ切替 ──────
   const [activeTab, setActiveTab] = useState<'today' | 'tomorrow'>('today')
 
