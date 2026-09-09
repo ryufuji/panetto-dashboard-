@@ -358,7 +358,8 @@ export default function EditReportPage() {
   }
 
   const updateTask = (taskId: string, field: string, value: any) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t))
+    // 同一イベント内で複数項目を続けて更新しても取りこぼさないよう、直前の state から更新する
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value } : t))
   }
 
   // 親タスクの進捗率の単純平均（親なし時は0）

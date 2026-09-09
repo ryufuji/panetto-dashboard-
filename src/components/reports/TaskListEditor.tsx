@@ -144,19 +144,42 @@ export function TaskListEditor({
                   </>
                 )}
               </div>
-              <div>
-                <Label className="text-xs">進捗(%) <span className="text-red-500">(*)</span><HelpTip text="現時点の完了率（0〜100）" /></Label>
-                <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
-              </div>
-              <div>
-                <Label className="text-xs">ステータス <span className="text-red-500">(*)</span><HelpTip text="現在の作業状況" /></Label>
-                <Select value={task.task_status || ''} onValueChange={v => updateTask(task.id, 'task_status', v)}>
-                  <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-                  <SelectContent>
-                    {TASK_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {task.is_recurring ? (
+                // 定期タスクは毎日繰り返す業務なので、進捗率とステータスの代わりに「本日実施済み」の1チェックで記録する
+                // （内部では 100%／完了、未チェックは 0%／未着手 として保存。通知や集計は従来と同じ）
+                <div className="md:col-span-2">
+                  <Label className="text-xs">本日の実施<HelpTip text="実施したらチェック。完了として記録され、次回該当日にまた取り込まれます" /></Label>
+                  <label className="flex items-center gap-2 h-9 px-3 rounded-md border bg-muted/30 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={(task.progress_rate ?? 0) >= 100 || task.task_status === '完了'}
+                      onChange={e => {
+                        const done = e.target.checked
+                        updateTask(task.id, 'progress_rate', done ? 100 : 0)
+                        updateTask(task.id, 'task_status', done ? '完了' : '未着手')
+                      }}
+                    />
+                    本日実施済み
+                  </label>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label className="text-xs">進捗(%) <span className="text-red-500">(*)</span><HelpTip text="現時点の完了率（0〜100）" /></Label>
+                    <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ステータス <span className="text-red-500">(*)</span><HelpTip text="現在の作業状況" /></Label>
+                    <Select value={task.task_status || ''} onValueChange={v => updateTask(task.id, 'task_status', v)}>
+                      <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                      <SelectContent>
+                        {TASK_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div>
                 <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="子タスクがある場合は子タスクの合計が自動設定されます。ない場合は見込み時間を入力してください" /></Label>
                 {children.length > 0 ? (
