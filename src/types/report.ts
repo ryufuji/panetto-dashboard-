@@ -52,7 +52,7 @@ export interface Task {
   no_norma?: boolean                   // ノルマなし
   no_due_date?: boolean                // 期日なし
   is_recurring?: boolean               // 定期タスク (ON のとき recurrence_pattern を参照)
-  recurrence_pattern?: RecurrencePattern  // 'daily' | 'weekly' | 'biweekly' | 'monthly'
+  recurrence_pattern?: RecurrencePattern  // daily / weekly / biweekly / monthly / bimonthly / quarterly / semiannual / yearly
   is_omitted?: boolean                 // 省略
   shared_user_ids?: string[]           // 共有ユーザー (参照のみ)
 }
@@ -66,15 +66,23 @@ export const RECURRENCE_PATTERNS = [
   { value: 'weekly', label: '週次（同曜日）' },
   { value: 'biweekly', label: '隔週（同曜日）' },
   { value: 'monthly', label: '月次（同日）' },
+  { value: 'bimonthly', label: '2か月ごと（同日）' },
+  { value: 'quarterly', label: '3か月ごと（同日）' },
+  { value: 'semiannual', label: '6か月ごと（同日）' },
+  { value: 'yearly', label: '1年ごと（同月同日）' },
 ] as const
 export type RecurrencePattern = typeof RECURRENCE_PATTERNS[number]['value']
 
+// 月単位パターンの間隔（か月）。ここに無いものは日・週単位
+const MONTH_INTERVALS: Record<string, number> = { monthly: 1, bimonthly: 2, quarterly: 3, semiannual: 6, yearly: 12 }
+
 /**
  * 指定パターンの定期タスクが、anchor 日付を起点として today に発火するかを判定。
- *   daily   : 常に true
- *   weekly  : today と anchor が同じ曜日
- *   biweekly: 同じ曜日 かつ 経過日数 / 7 が偶数 (anchor を 0 として)
- *   monthly : today と anchor が同じ日 (月末は最後の日扱い)
+ *   daily     : 常に true
+ *   weekly    : today と anchor が同じ曜日
+ *   biweekly  : 同じ曜日 かつ 経過日数 / 7 が偶数 (anchor を 0 として)
+ *   monthly / bimonthly / quarterly / semiannual / yearly :
+ *               anchor からの経過月数が間隔の倍数 かつ 同じ日 (月末は最後の日扱い)
  */
 export function recurrenceFires(
   pattern: RecurrencePattern | string | undefined | null,
@@ -92,12 +100,14 @@ export function recurrenceFires(
   if (p === 'daily') return true
   if (p === 'weekly') return a.getUTCDay() === t.getUTCDay()
   if (p === 'biweekly') return a.getUTCDay() === t.getUTCDay() && Math.floor(diffDays / 7) % 2 === 0
-  if (p === 'monthly') {
+  const interval = MONTH_INTERVALS[p]
+  if (interval) {
+    const diffMonths = (t.getUTCFullYear() - a.getUTCFullYear()) * 12 + (t.getUTCMonth() - a.getUTCMonth())
+    if (diffMonths <= 0 || diffMonths % interval !== 0) return false
     // 月の日 (DOM) が一致。月末アンカー (29,30,31) は対象月の最終日に対応
     const aDom = a.getUTCDate()
     const tDom = t.getUTCDate()
     if (aDom === tDom) return true
-    // 月末対応: anchor=31 で today が 28-30(その月の最終日) でもマッチ
     const lastDom = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()
     return aDom > lastDom && tDom === lastDom
   }
