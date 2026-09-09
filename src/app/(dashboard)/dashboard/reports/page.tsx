@@ -28,6 +28,7 @@ type MergedRow = {
   href: string
   source: 'internal' | 'store'
   view_count: number
+  sort_ts: string  // 同日内の並び順: 提出日時（未提出は作成日時）の新しい順
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string; date?: string; user?: string; department?: string }> }) {
@@ -70,7 +71,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   let reportsQuery = supabase
     .from('reports')
-    .select('id, report_date, title, status, progress_rate, work_hours, user:users(name, is_active, department:departments!users_department_id_fkey(name))', { count: 'exact' })
+    .select('id, report_date, title, status, progress_rate, work_hours, submitted_at, created_at, user:users(name, is_active, department:departments!users_department_id_fkey(name))', { count: 'exact' })
     .order('report_date', { ascending: false })
     .limit(fetchCap)
 
@@ -79,6 +80,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   }
   if (dateFilter) {
     reportsQuery = reportsQuery.eq('report_date', dateFilter)
+    .order('submitted_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
   }
   if (departmentId) {
     reportsQuery = reportsQuery.eq('department_id', departmentId)
@@ -149,6 +152,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       report_date: sr.report_date,
       author_name: sr.external_user_name,
       department_or_store: sr.store_name,
+      sort_ts: (r as any).submitted_at || (r as any).created_at || '',
       title: `${sr.external_user_name}の日報`,
       status_label: `${sr.completed_count}/${sr.task_count}件完了`,
       status_variant: sr.completed_count === sr.task_count && sr.task_count > 0 ? 'default' : 'secondary',
@@ -160,12 +164,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     })
   }
 
-  // Sort by report_date descending
-  merged.sort((a, b) => b.report_date.localeCompare(a.report_date))
+  // 日付の新しい順 → 同日内は提出日時の新しい順
+  merged.sort((a, b) => b.report_date.localeCompare(a.report_date) || b.sort_ts.localeCompare(a.sort_ts))
 
   // Total count comes from DB count() (not the over-fetched merged list)
   const totalCount = reportsCount + storeReportsCount
   const paginated = merged.slice(offset, offset + limit)
+      sort_ts: '',
   const totalPages = Math.ceil(totalCount / limit)
 
   return (
@@ -174,7 +179,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <div>
           <h1 className="text-3xl font-bold tracking-tight">日報一覧</h1>
           <p className="text-muted-foreground">
-            {dateFilter ? <>📅 {dateFilter} の日報 - 全{totalCount}件 <Link href="/dashboard/reports" className="ml-2 text-blue-600 hover:underline">フィルタ解除</Link></> : <>全{totalCount}件</>}
+            {dateFilter ? <>📅 {dateFilter} の日報 - 全{totalCount}件 <Link href="/dashboard/reports" className="ml-2 text-blue-600 hover:underline">フィルタ解除</Link></> : <>全{totalCount}件・提出が新しい順</>}
           </p>
         </div>
         <div className="flex gap-2">
