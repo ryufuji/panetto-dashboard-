@@ -80,6 +80,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     .from('reports')
     .select('id, report_date, title, status, progress_rate, work_hours, submitted_at, created_at, user:users(name, is_active, department:departments!users_department_id_fkey(name))', { count: 'exact' })
     .order('report_date', { ascending: false })
+    .order('submitted_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
     .limit(fetchCap)
 
   if (params.status) {
@@ -87,8 +89,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   }
   if (dateFilter) {
     reportsQuery = reportsQuery.eq('report_date', dateFilter)
-    .order('submitted_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
   }
   if (departmentId) {
     reportsQuery = deptUserIds.length > 0
@@ -152,6 +152,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       href: `/dashboard/reports/${r.id}`,
       source: 'internal',
       view_count: viewCountMap.get(r.id) || 0,
+      sort_ts: (r as any).submitted_at || (r as any).created_at || '',
     })
   }
 
@@ -161,7 +162,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       report_date: sr.report_date,
       author_name: sr.external_user_name,
       department_or_store: sr.store_name,
-      sort_ts: (r as any).submitted_at || (r as any).created_at || '',
       title: `${sr.external_user_name}の日報`,
       status_label: `${sr.completed_count}/${sr.task_count}件完了`,
       status_variant: sr.completed_count === sr.task_count && sr.task_count > 0 ? 'default' : 'secondary',
@@ -170,6 +170,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       href: `/dashboard/reports/store/${sr.id}`,
       source: 'store',
       view_count: 0,
+      sort_ts: '',
     })
   }
 
@@ -179,7 +180,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // Total count comes from DB count() (not the over-fetched merged list)
   const totalCount = reportsCount + storeReportsCount
   const paginated = merged.slice(offset, offset + limit)
-      sort_ts: '',
   const totalPages = Math.ceil(totalCount / limit)
 
   return (

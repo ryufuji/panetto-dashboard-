@@ -1089,6 +1089,10 @@ export default function NewReportPage() {
                 </DropdownMenuItem>
               ))
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled className="text-xs text-muted-foreground whitespace-normal">
+              タスクを1件ずつ選ぶには「タスク引き継ぎ」→「未完了タスクから選択…」を使ってください
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -1100,10 +1104,6 @@ export default function NewReportPage() {
           onClick={() => setActiveTab('today')}
           className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${activeTab === 'today' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >① 本日の業務</button>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled className="text-xs text-muted-foreground whitespace-normal">
-              タスクを1件ずつ選ぶには「タスク引き継ぎ」→「未完了タスクから選択…」を使ってください
-            </DropdownMenuItem>
         <button
           type="button"
           onClick={() => setActiveTab('tomorrow')}
