@@ -96,3 +96,39 @@ export async function createPanetUsersBulk(
     return null
   }
 }
+
+export interface PanetUserRecord {
+  id: number
+  email: string
+  display_name: string
+  department: string | null
+  position: string | null
+  area: string | null
+  affiliation: string | null
+  role: string
+  archived: number | boolean
+  join_date: string | null
+}
+
+/**
+ * PANET の全ユーザー一覧を取得する（GET /api/admin/users）。
+ * 部署の一括取込で使う。未設定・失敗時は null（呼び出し側でエラー表示）。
+ */
+export async function fetchPanetUsers(): Promise<{ users: PanetUserRecord[] } | { error: string }> {
+  const apiUrl = process.env.PANET_API_URL
+  const apiKey = process.env.PANET_API_KEY
+  if (!apiUrl || !apiKey) return { error: 'PANET_API_URL / PANET_API_KEY が設定されていません' }
+  try {
+    const res = await fetch(`${apiUrl}/api/admin/users`, {
+      headers: { 'X-API-Key': apiKey },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+    })
+    if (res.status === 404) return { error: 'PANET 側にユーザー一覧 API（GET /api/admin/users）がありません。PANET を最新版にデプロイしてください' }
+    if (!res.ok) return { error: `PANET から一覧を取得できませんでした（HTTP ${res.status}）` }
+    const data = await res.json()
+    return { users: (data.users || []) as PanetUserRecord[] }
+  } catch (err) {
+    return { error: `PANET への接続に失敗しました: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}

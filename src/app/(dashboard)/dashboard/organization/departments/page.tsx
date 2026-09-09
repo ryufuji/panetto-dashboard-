@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Pencil, Loader2, Building2, Users } from 'lucide-react'
+import { Plus, Pencil, Loader2, Building2, Users, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface CreateForm {
@@ -63,6 +63,26 @@ export default function DepartmentsPage() {
     is_active: true,
   })
   const [saving, setSaving] = useState(false)
+
+  // PANET からの部署一括取込（プレビュー → 実行）
+  const [importPreview, setImportPreview] = useState<any>(null)
+  const [importing, setImporting] = useState(false)
+  const runImport = async (dryRun: boolean) => {
+    setImporting(true)
+    try {
+      const res = await fetch('/api/organization/departments/import-panet', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun }),
+      })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error || '取り込みに失敗しました'); return }
+      if (dryRun) { setImportPreview(json); return }
+      toast.success(`部署 ${json.created_departments} 件を作成し、${json.assigned} 名に部署を割り当てました${json.failures?.length ? `（${json.failures.length} 名は失敗）` : ''}`)
+      setImportPreview(null)
+      fetchData()
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -173,11 +193,68 @@ export default function DepartmentsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">部署管理</h1>
         {isAdmin && (
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="mr-2 h-4 w-4" />新規作成
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => runImport(true)} disabled={importing}>
+              {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}PANETから部署を取り込む
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="mr-2 h-4 w-4" />新規作成
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* PANET 取込のプレビュー */}
+      <Dialog open={!!importPreview} onOpenChange={(open) => { if (!open) setImportPreview(null) }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>PANET から部署を取り込む</DialogTitle>
+            <DialogDescription>
+              PANET に登録されている部署名をもとに、部署の作成と社員への割り当てを行います。内容を確認して「取り込む」を押してください。
+            </DialogDescription>
+          </DialogHeader>
+          {importPreview && (
+            <div className="space-y-4 text-sm max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">新しく作る部署</p><p className="text-2xl font-semibold">{importPreview.departments_to_create.length}</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">部署を割り当てる社員</p><p className="text-2xl font-semibold">{importPreview.assignments.length}</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">照合できない社員</p><p className="text-2xl font-semibold">{importPreview.unmatched.length}</p></div>
+              </div>
+              {importPreview.departments_to_create.length > 0 && (
+                <div>
+                  <p className="font-medium mb-1">作成する部署</p>
+                  <div className="flex flex-wrap gap-1">{importPreview.departments_to_create.map((n: string) => <Badge key={n} variant="secondary">{n}</Badge>)}</div>
+                </div>
+              )}
+              {importPreview.assignments.length > 0 && (
+                <div>
+                  <p className="font-medium mb-1">割り当て（{importPreview.assignments.length} 名）</p>
+                  <ul className="space-y-0.5 text-xs">
+                    {importPreview.assignments.map((a: any) => (
+                      <li key={a.user_id}>{a.name} — {a.department}{a.previous ? <span className="text-muted-foreground">（現在: {a.previous}）</span> : ''}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {importPreview.unmatched.length > 0 && (
+                <div>
+                  <p className="font-medium mb-1 text-amber-700">照合できない社員（ダッシュボードに同じメールの社員がいません）</p>
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {importPreview.unmatched.map((u: any) => <li key={u.email}>{u.display_name}（{u.email}）— {u.department}</li>)}
+                  </ul>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">PANET 側で部署が空の社員 {importPreview.skipped_no_department} 名は対象外です。作成した部署のコードは部署名と同じになります（後から編集できます）。</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportPreview(null)} disabled={importing}>キャンセル</Button>
+            <Button onClick={() => runImport(false)} disabled={importing || !importPreview || (importPreview.departments_to_create.length === 0 && importPreview.assignments.length === 0)}>
+              {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}取り込む
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {departments.map((dept: any) => (
