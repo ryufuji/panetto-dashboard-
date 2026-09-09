@@ -58,6 +58,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     }
   }
 
+  // 部署フィルタ: 日報に部署が付いていない過去分も拾えるよう、その部署に所属するユーザーの日報も対象にする
+  let deptUserIds: string[] = []
+  if (departmentId) {
+    const { data: deptUsers } = await supabase.from('users').select('id').eq('department_id', departmentId).limit(1000)
+    deptUserIds = (deptUsers || []).map((u: any) => u.id)
+  }
+
   // 全部署一覧（ドロップダウン用）
   const departmentsRes = await supabase
     .from('departments')
@@ -84,7 +91,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     .order('created_at', { ascending: false })
   }
   if (departmentId) {
-    reportsQuery = reportsQuery.eq('department_id', departmentId)
+    reportsQuery = deptUserIds.length > 0
+      ? reportsQuery.or(`department_id.eq.${departmentId},user_id.in.(${deptUserIds.join(',')})`)
+      : reportsQuery.eq('department_id', departmentId)
   }
   if (userIdsForFilter) {
     reportsQuery = reportsQuery.in('user_id', userIdsForFilter)

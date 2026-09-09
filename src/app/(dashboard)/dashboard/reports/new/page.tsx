@@ -528,6 +528,8 @@ export default function NewReportPage() {
       if (lastReport?.start_time) setStartTime(lastReport.start_time)
       setAreas((offs || []) as any)
       setDepartments((depts || []) as any)
+      // 社員情報に部署が登録されていれば自動で選択する（手動で変更可）
+      if ((profile as any).department_id) setDepartmentId(prev => prev || (profile as any).department_id)
       setThresholdRules(rules || [])
       if ((deptResult as any)?.data?.manager_id && (deptResult as any).data.manager_id !== user.id) {
         setDefaultApproverId((deptResult as any).data.manager_id)
