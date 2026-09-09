@@ -245,14 +245,20 @@ export default function NewReportPage() {
         return
       }
 
-      // ① reports 本体
-      setReportDate(draft.report_date || today)
-      setTitle(draft.title || '')
-      setWorkHours(draft.work_hours != null ? String(draft.work_hours) : '')
-      setNextDayPlan(draft.next_day_plan || '')
-      setStartTime(draft.start_time || '')
-      setEndTime(draft.end_time || '')
-      if (draft.department_id) setDepartmentId(draft.department_id)
+      // 下書きは「続きから再開」なので入力中の内容を置き換える。提出済み日報は今日の日報にタスクを「追加」する
+      const isDraft = status === 'draft'
+      if (isDraft) {
+        const hasInput = tasks.some(t => t.title.trim() !== '')
+        if (hasInput && !window.confirm('入力中のタスクは、選択した下書きの内容に置き換わります。よろしいですか？')) return
+        // ① reports 本体
+        setReportDate(draft.report_date || today)
+        setTitle(draft.title || '')
+        setWorkHours(draft.work_hours != null ? String(draft.work_hours) : '')
+        setNextDayPlan(draft.next_day_plan || '')
+        setStartTime(draft.start_time || '')
+        setEndTime(draft.end_time || '')
+        if (draft.department_id) setDepartmentId(draft.department_id)
+      }
 
       // ② report_tasks (親+子)
       const { data: dbTasks, error: tasksErr } = await supabase
@@ -312,7 +318,19 @@ export default function NewReportPage() {
         is_omitted: !!t.is_omitted,
         shared_user_ids: sharedMap.get(t.id) || [],
       } as Task))
-      if (restored.length > 0) setTasks(restored)
+      if (isDraft) {
+        if (restored.length > 0) setTasks(restored)
+      } else {
+        // 同名の親タスクは重複させない。子タスクは追加した親のものだけ付ける
+        const existingTitles = new Set(tasks.filter(t => !t.parent_id && t.title.trim()).map(t => t.title.trim()))
+        const parentsToAdd = restored.filter(t => !t.parent_id && t.title.trim() && !existingTitles.has(t.title.trim()))
+        const addedIds = new Set(parentsToAdd.map(t => t.id))
+        const childrenToAdd = restored.filter(t => t.parent_id && addedIds.has(t.parent_id))
+        const skipped = restored.filter(t => !t.parent_id && t.title.trim()).length - parentsToAdd.length
+        const baseline = tasks.length === 1 && !tasks[0].title.trim() ? [] : tasks
+        setTasks([...baseline, ...parentsToAdd, ...childrenToAdd])
+        toast.success(`${draft.report_date} の日報からタスク ${parentsToAdd.length} 件を追加しました${skipped > 0 ? `（同名の ${skipped} 件は追加していません）` : ''}`)
+      }
 
       // ③ planned_tasks
       const { data: dbPlanned } = await supabase
@@ -325,10 +343,14 @@ export default function NewReportPage() {
         title: p.title || '',
         estimated_hours: p.estimated_hours != null ? String(p.estimated_hours) : '',
       }))
-      setPlannedTasks(restoredPlanned)
-
-      const label = status === 'draft' ? '下書き' : '日報'
-      toast.success(`${draft.report_date} の${label}を読み込みました`)
+      if (isDraft) {
+        setPlannedTasks(restoredPlanned)
+        toast.success(`${draft.report_date} の下書きを読み込みました`)
+      } else if (restoredPlanned.length > 0) {
+        const existingPlanned = new Set(plannedTasks.map(p => p.title.trim()).filter(Boolean))
+        const add = restoredPlanned.filter(p => p.title.trim() && !existingPlanned.has(p.title.trim()))
+        if (add.length > 0) setPlannedTasks(prev => [...prev.filter(p => p.title.trim()), ...add])
+      }
     } catch (err: any) {
       toast.error(err.message || 'データの取得に失敗しました')
     } finally {
@@ -1024,7 +1046,7 @@ export default function NewReportPage() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel className="text-xs text-muted-foreground flex items-center gap-1">
-              <FileText className="h-3 w-3" />下書き
+              <FileText className="h-3 w-3" />下書きを開く（入力中の内容は置き換わります）
             </DropdownMenuLabel>
             {draftListLoading ? (
               <DropdownMenuItem disabled>読み込み中...</DropdownMenuItem>
@@ -1041,7 +1063,7 @@ export default function NewReportPage() {
             )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground flex items-center gap-1">
-              <ClipboardCheck className="h-3 w-3" />提出済み日報からコピー
+              <ClipboardCheck className="h-3 w-3" />提出済み日報のタスクを今日に追加
             </DropdownMenuLabel>
             {draftListLoading ? (
               <DropdownMenuItem disabled>読み込み中...</DropdownMenuItem>
@@ -1067,6 +1089,10 @@ export default function NewReportPage() {
           onClick={() => setActiveTab('today')}
           className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${activeTab === 'today' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >① 本日の業務</button>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled className="text-xs text-muted-foreground whitespace-normal">
+              タスクを1件ずつ選ぶには「タスク引き継ぎ」→「未完了タスクから選択…」を使ってください
+            </DropdownMenuItem>
         <button
           type="button"
           onClick={() => setActiveTab('tomorrow')}
