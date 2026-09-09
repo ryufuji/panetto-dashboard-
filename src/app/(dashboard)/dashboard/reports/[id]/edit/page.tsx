@@ -11,26 +11,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Plus, Trash2, Save, Send, GripVertical, Loader2, X, ClipboardCheck, ExternalLink, Link2, Lock, CalendarClock, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Save, Send, Loader2, X, CalendarClock } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval, TASK_STATUS_OPTIONS } from '@/types/report'
+import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval } from '@/types/report'
+import { TaskListEditor } from '@/components/reports/TaskListEditor'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
-
-const APPROVAL_CATEGORIES = [
-  { value: 'equipment_purchase', label: '備品購入' },
-  { value: 'document_review', label: '書類チェック' },
-  { value: 'other', label: 'その他' },
-]
-
-const APPROVAL_STATUS_MAP: Record<string, { label: string; className: string }> = {
-  draft: { label: '下書き', className: 'bg-gray-50 text-gray-700' },
-  pending: { label: '承認待ち', className: 'bg-orange-50 text-orange-700' },
-  approved: { label: '承認済み', className: 'bg-green-50 text-green-700' },
-  rejected: { label: '却下', className: 'bg-red-50 text-red-700' },
-  cancelled: { label: '取消', className: 'bg-gray-50 text-gray-500' },
-}
 
 const EXTENSION_STATUS_MAP: Record<string, { label: string; className: string }> = {
   pending: { label: '申請中', className: 'bg-orange-50 text-orange-700' },
@@ -165,6 +152,19 @@ export default function EditReportPage() {
       const taskIds = reportTasks.map((t: any) => t.id)
       let approvalMap = new Map<string, any>()
       let extensionMap = new Map<string, DeadlineExtension[]>()
+      // 共有ユーザー（参照のみ）
+      const sharedMap = new Map<string, string[]>()
+      if (taskIds.length > 0) {
+        const { data: shared } = await supabase
+          .from('report_task_shared_users')
+          .select('task_id, user_id')
+          .in('task_id', taskIds)
+        ;(shared || []).forEach((s: any) => {
+          const arr = sharedMap.get(s.task_id) || []
+          arr.push(s.user_id)
+          sharedMap.set(s.task_id, arr)
+        })
+      }
       if (taskIds.length > 0) {
         const { data: approvalRequests } = await supabase
           .from('approval_requests')
@@ -238,6 +238,16 @@ export default function EditReportPage() {
           purpose: pt.purpose || '',
           task_status: pt.task_status || '',
           actual_url: pt.actual_url || '',
+          target_norma_count: pt.target_norma_count != null ? String(pt.target_norma_count) : '',
+          target_norma_amount: pt.target_norma_amount != null ? String(pt.target_norma_amount) : '',
+          today_result_count: pt.today_result_count != null ? String(pt.today_result_count) : '',
+          today_result_amount: pt.today_result_amount != null ? String(pt.today_result_amount) : '',
+          no_norma: !!pt.no_norma,
+          no_due_date: !!pt.no_due_date,
+          is_recurring: !!pt.is_recurring,
+          recurrence_pattern: pt.recurrence_pattern || undefined,
+          is_omitted: !!pt.is_omitted,
+          shared_user_ids: sharedMap.get(pt.id) || [],
           approval,
           deadline_extensions: exts,
         })
@@ -262,6 +272,12 @@ export default function EditReportPage() {
             due_date: ct.due_date || '',
             parent_id: localId,
             approval: defaultApproval(),
+            task_status: ct.task_status || '',
+            target_norma_count: ct.target_norma_count != null ? String(ct.target_norma_count) : '',
+            target_norma_amount: ct.target_norma_amount != null ? String(ct.target_norma_amount) : '',
+            today_result_count: ct.today_result_count != null ? String(ct.today_result_count) : '',
+            today_result_amount: ct.today_result_amount != null ? String(ct.today_result_amount) : '',
+            no_norma: !!ct.no_norma,
           })
         })
       })
@@ -318,9 +334,22 @@ export default function EditReportPage() {
       task_type: '',
       priority: 'medium',
       start_date: new Date().toISOString().split('T')[0],
-      due_date: '',
+      due_date: parentId ? '' : new Date().toISOString().split('T')[0],
       parent_id: parentId,
       approval: defaultApproval(),
+      purpose: '',
+      memo: '',
+      actual_url: '',
+      task_status: '未着手',
+      target_norma_count: '',
+      target_norma_amount: '',
+      today_result_count: '',
+      today_result_amount: '',
+      no_norma: false,
+      no_due_date: false,
+      is_recurring: false,
+      is_omitted: false,
+      shared_user_ids: [],
     }])
   }
 
@@ -538,23 +567,44 @@ export default function EditReportPage() {
       const parentTasks = tasks.filter(t => !t.parent_id && t.title.trim())
       for (let i = 0; i < parentTasks.length; i++) {
         const pt = parentTasks[i]
+        // 子タスクがある親の工数は子の合計（新規作成ページと同じ規則）
+        const parentChildren = tasks.filter(t => t.parent_id === pt.id)
+        const estimatedHours = parentChildren.length > 0
+          ? parentChildren.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)
+          : (pt.estimated_hours ? parseFloat(pt.estimated_hours) : null)
         const { data: savedTask } = await supabase.from('report_tasks').insert({
           report_id: id,
           title: pt.title,
           description: pt.description || null,
-          estimated_hours: pt.estimated_hours ? parseFloat(pt.estimated_hours) : null,
+          estimated_hours: estimatedHours,
           actual_hours: pt.actual_hours ? parseFloat(pt.actual_hours) : null,
           progress_rate: pt.progress_rate,
           task_type: pt.task_type || null,
           priority: pt.priority,
           start_date: pt.start_date || null,
-          due_date: pt.due_date || null,
+          due_date: pt.no_due_date ? null : (pt.due_date || null),
           order_index: i,
           memo: pt.memo || null,
           purpose: pt.purpose || null,
           task_status: pt.task_status || null,
           actual_url: pt.actual_url || null,
+          target_norma_count: pt.target_norma_count ? parseInt(pt.target_norma_count) : null,
+          target_norma_amount: pt.target_norma_amount ? parseFloat(pt.target_norma_amount) : null,
+          today_result_count: pt.today_result_count ? parseInt(pt.today_result_count) : null,
+          today_result_amount: pt.today_result_amount ? parseFloat(pt.today_result_amount) : null,
+          no_norma: !!pt.no_norma,
+          no_due_date: !!pt.no_due_date,
+          is_recurring: !!pt.is_recurring,
+          recurrence_pattern: pt.is_recurring ? (pt.recurrence_pattern || 'daily') : null,
+          is_omitted: !!pt.is_omitted,
         }).select().single()
+
+        // 共有ユーザー（参照のみ）を保存
+        if (savedTask && pt.shared_user_ids && pt.shared_user_ids.length > 0) {
+          await supabase.from('report_task_shared_users').insert(
+            pt.shared_user_ids.map((uid: string) => ({ task_id: savedTask.id, user_id: uid }))
+          )
+        }
 
         if (savedTask) {
           const existingApproval = existingApprovals.find(ea => ea.localId === pt.id)
@@ -656,6 +706,12 @@ export default function EditReportPage() {
             start_date: ct.start_date || null,
             due_date: ct.due_date || null,
             order_index: j,
+            task_status: ct.task_status || null,
+            target_norma_count: ct.target_norma_count ? parseInt(ct.target_norma_count) : null,
+            target_norma_amount: ct.target_norma_amount ? parseFloat(ct.target_norma_amount) : null,
+            today_result_count: ct.today_result_count ? parseInt(ct.today_result_count) : null,
+            today_result_amount: ct.today_result_amount ? parseFloat(ct.today_result_amount) : null,
+            no_norma: !!ct.no_norma,
           })
         }
       }
@@ -712,7 +768,117 @@ export default function EditReportPage() {
     )
   }
 
-  const parentTasks = tasks.filter(t => !t.parent_id)
+  // 編集ページ固有: 提出済みタスクの期限延長申請（TaskListEditor のメタ直後に差し込む）
+  const renderDeadlineExtension = (task: Task) => {
+    const locked = isDeadlineLocked(task)
+    const pendingExt = task.deadline_extensions?.find(e => e.status === 'pending')
+    const rejectedExt = task.deadline_extensions?.find(e => e.status === 'rejected')
+    const canRequestExtension = locked && !pendingExt
+    const extForm = extensionForms[task.id]
+    return (
+      <>
+        {locked && (
+          <div className="space-y-2">
+            {/* Show pending extension */}
+            {pendingExt && (
+              <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50/30 p-3">
+                <CalendarClock className="h-4 w-4 text-orange-500 shrink-0" />
+                <div className="flex-1 text-sm">
+                  <span className="font-medium">期限延長申請中</span>
+                  <span className="text-muted-foreground ml-2">
+                    {pendingExt.original_due_date} → {pendingExt.proposed_due_date}
+                  </span>
+                </div>
+                <Badge className={EXTENSION_STATUS_MAP.pending.className}>{EXTENSION_STATUS_MAP.pending.label}</Badge>
+              </div>
+            )}
+
+            {/* Show rejected extension */}
+            {rejectedExt && !pendingExt && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/30 p-3">
+                <CalendarClock className="h-4 w-4 text-red-500 shrink-0" />
+                <div className="flex-1 text-sm">
+                  <span className="font-medium">期限延長申請が却下されました</span>
+                  {rejectedExt.approver_comment && (
+                    <p className="text-xs text-muted-foreground mt-1">コメント: {rejectedExt.approver_comment}</p>
+                  )}
+                </div>
+                <Badge className={EXTENSION_STATUS_MAP.rejected.className}>{EXTENSION_STATUS_MAP.rejected.label}</Badge>
+              </div>
+            )}
+
+            {/* Extension request button & form */}
+            {canRequestExtension && (
+              <>
+                {!extForm?.open ? (
+                  <Button variant="outline" size="sm" onClick={() => toggleExtensionForm(task.id)}>
+                    <CalendarClock className="mr-1 h-3.5 w-3.5" />期限延長申請
+                  </Button>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium flex items-center gap-1">
+                        <CalendarClock className="h-4 w-4 text-amber-600" />
+                        期限延長申請
+                      </span>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleExtensionForm(task.id)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">現在の期限</Label>
+                        <Input type="date" value={task.due_date} disabled className="bg-gray-50" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">新しい期限 <span className="text-red-500">*</span></Label>
+                        <Input
+                          type="date"
+                          value={extForm.proposed_due_date}
+                          min={task.due_date}
+                          onChange={e => updateExtensionForm(task.id, 'proposed_due_date', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">理由</Label>
+                      <Textarea
+                        placeholder="延長が必要な理由..."
+                        value={extForm.reason}
+                        onChange={e => updateExtensionForm(task.id, 'reason', e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">承認者 <span className="text-red-500">*</span></Label>
+                      <Select value={extForm.approver_id} onValueChange={v => updateExtensionForm(task.id, 'approver_id', v)}>
+                        <SelectTrigger><SelectValue placeholder="承認者を選択..." /></SelectTrigger>
+                        <SelectContent>
+                          {members.map(m => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name}{m.department?.name ? ` (${m.department.name})` : ''}{m.id === defaultApproverId ? ' (部署長)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={() => submitExtension(task)} disabled={extForm.submitting}>
+                        {extForm.submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}
+                        申請
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  const today = new Date().toISOString().split('T')[0]
 
   return (
     <div className="space-y-6 max-w-4xl pb-20">
@@ -816,414 +982,23 @@ export default function EditReportPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {parentTasks.map((task, i) => {
-            const children = tasks.filter(t => t.parent_id === task.id)
-            const isExistingNonDraft = task.approval.existing_id && task.approval.existing_status !== 'draft'
-            const requiredSteps = getRequiredSteps(task.approval.amount)
-            const locked = isDeadlineLocked(task)
-            const pendingExt = task.deadline_extensions?.find(e => e.status === 'pending')
-            const rejectedExt = task.deadline_extensions?.find(e => e.status === 'rejected')
-            const canRequestExtension = locked && !pendingExt
-            const extForm = extensionForms[task.id]
-            return (
-              <div key={task.id} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm font-medium text-muted-foreground">親タスク {i + 1}</span>
-                  <div className="flex-1" />
-                  <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}>
-                    <Plus className="h-3 w-3 mr-1" />子タスク
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeTask(task.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-                <Input placeholder="タスク名" value={task.title} onChange={e => updateTask(task.id, 'title', e.target.value)} />
-                <Textarea placeholder="詳細（任意）" value={task.description} onChange={e => updateTask(task.id, 'description', e.target.value)} rows={2} />
-                <Textarea placeholder="備考・メモ（任意）" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
-                <div>
-                  <Label className="text-xs">進行中・実績URL（任意）</Label>
-                  <Input type="url" placeholder="https://..." value={task.actual_url || ''} onChange={e => updateTask(task.id, 'actual_url', e.target.value)} />
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  <div>
-                    <Label className="text-xs">工数(h)</Label>
-                    <Input type="number" step="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">実績(h)</Label>
-                    <Input type="number" step="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">進捗(%)</Label>
-                    <Input type="number" min="0" max="100" placeholder="0" value={task.progress_rate || ''} onChange={e => updateTask(task.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">ステータス</Label>
-                    <Select value={task.task_status || ''} onValueChange={v => updateTask(task.id, 'task_status', v)}>
-                      <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
-                      <SelectContent>
-                        {TASK_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">優先度</Label>
-                    <Select value={task.priority} onValueChange={v => updateTask(task.id, 'priority', v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="high">高</SelectItem>
-                        <SelectItem value="medium">中</SelectItem>
-                        <SelectItem value="low">低</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">開始日</Label>
-                    <Input type="date" value={task.start_date} onChange={e => updateTask(task.id, 'start_date', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">期限</Label>
-                    {locked ? (
-                      <div className="flex items-center gap-1">
-                        <Input type="date" value={task.due_date} disabled className="bg-gray-50" />
-                        <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                      </div>
-                    ) : (
-                      <Input type="date" value={task.due_date} onChange={e => updateTask(task.id, 'due_date', e.target.value)} />
-                    )}
-                  </div>
-                </div>
-
-                {/* Deadline extension section */}
-                {locked && (
-                  <div className="space-y-2">
-                    {/* Show pending extension */}
-                    {pendingExt && (
-                      <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50/30 p-3">
-                        <CalendarClock className="h-4 w-4 text-orange-500 shrink-0" />
-                        <div className="flex-1 text-sm">
-                          <span className="font-medium">期限延長申請中</span>
-                          <span className="text-muted-foreground ml-2">
-                            {pendingExt.original_due_date} → {pendingExt.proposed_due_date}
-                          </span>
-                        </div>
-                        <Badge className={EXTENSION_STATUS_MAP.pending.className}>{EXTENSION_STATUS_MAP.pending.label}</Badge>
-                      </div>
-                    )}
-
-                    {/* Show rejected extension */}
-                    {rejectedExt && !pendingExt && (
-                      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/30 p-3">
-                        <CalendarClock className="h-4 w-4 text-red-500 shrink-0" />
-                        <div className="flex-1 text-sm">
-                          <span className="font-medium">期限延長申請が却下されました</span>
-                          {rejectedExt.approver_comment && (
-                            <p className="text-xs text-muted-foreground mt-1">コメント: {rejectedExt.approver_comment}</p>
-                          )}
-                        </div>
-                        <Badge className={EXTENSION_STATUS_MAP.rejected.className}>{EXTENSION_STATUS_MAP.rejected.label}</Badge>
-                      </div>
-                    )}
-
-                    {/* Extension request button & form */}
-                    {canRequestExtension && (
-                      <>
-                        {!extForm?.open ? (
-                          <Button variant="outline" size="sm" onClick={() => toggleExtensionForm(task.id)}>
-                            <CalendarClock className="mr-1 h-3.5 w-3.5" />期限延長申請
-                          </Button>
-                        ) : (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium flex items-center gap-1">
-                                <CalendarClock className="h-4 w-4 text-amber-600" />
-                                期限延長申請
-                              </span>
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleExtensionForm(task.id)}>
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1">
-                                <Label className="text-xs">現在の期限</Label>
-                                <Input type="date" value={task.due_date} disabled className="bg-gray-50" />
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-xs">新しい期限 <span className="text-red-500">*</span></Label>
-                                <Input
-                                  type="date"
-                                  value={extForm.proposed_due_date}
-                                  min={task.due_date}
-                                  onChange={e => updateExtensionForm(task.id, 'proposed_due_date', e.target.value)}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">理由</Label>
-                              <Textarea
-                                placeholder="延長が必要な理由..."
-                                value={extForm.reason}
-                                onChange={e => updateExtensionForm(task.id, 'reason', e.target.value)}
-                                rows={2}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">承認者 <span className="text-red-500">*</span></Label>
-                              <Select value={extForm.approver_id} onValueChange={v => updateExtensionForm(task.id, 'approver_id', v)}>
-                                <SelectTrigger><SelectValue placeholder="承認者を選択..." /></SelectTrigger>
-                                <SelectContent>
-                                  {members.map(m => (
-                                    <SelectItem key={m.id} value={m.id}>
-                                      {m.name}{m.department?.name ? ` (${m.department.name})` : ''}{m.id === defaultApproverId ? ' (部署長)' : ''}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="flex justify-end">
-                              <Button size="sm" onClick={() => submitExtension(task)} disabled={extForm.submitting}>
-                                {extForm.submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}
-                                申請
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* 子タスクは展開式 */}
-                {children.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs gap-1 text-muted-foreground"
-                    onClick={() => toggleExpand(task.id)}
-                  >
-                    {expandedParents.has(task.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    子タスク {children.length}件{expandedParents.has(task.id) ? 'を非表示' : 'を表示'}
-                  </Button>
-                )}
-                {expandedParents.has(task.id) && children.map((child, j) => (
-                  <div key={child.id} className="ml-6 rounded-lg border border-dashed p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">子タスク {j + 1}</span>
-                      <div className="flex-1" />
-                      <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => removeTask(child.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
-                    <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
-                    <div className="grid grid-cols-5 gap-2">
-                      <div>
-                        <Label className="text-xs">見積(h)</Label>
-                        <Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} />
-                      </div>
-                      <div>
-                        <Label className="text-xs">実績(h)</Label>
-                        <Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} />
-                      </div>
-                      <div>
-                        <Label className="text-xs">進捗(%)</Label>
-                        <Input type="number" min="0" max="100" placeholder="0" value={child.progress_rate || ''} onChange={e => updateTask(child.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} />
-                      </div>
-                      <div>
-                        <Label className="text-xs">開始日</Label>
-                        <Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} />
-                      </div>
-                      <div>
-                        <Label className="text-xs">期限</Label>
-                        <Input type="date" value={child.due_date} onChange={e => updateTask(child.id, 'due_date', e.target.value)} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Approval request section */}
-                <div className="mt-2 border-t pt-3">
-                  {isExistingNonDraft ? (
-                    // Read-only for non-draft existing approvals
-                    <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/30 p-3">
-                      <ClipboardCheck className="h-4 w-4 text-blue-500 shrink-0" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{task.approval.title}</span>
-                          <Badge className={APPROVAL_STATUS_MAP[task.approval.existing_status || 'draft']?.className}>
-                            {APPROVAL_STATUS_MAP[task.approval.existing_status || 'draft']?.label}
-                          </Badge>
-                        </div>
-                        {task.approval.amount && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            金額: ¥{Number(task.approval.amount).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <Link href={`/dashboard/approval-requests/${task.approval.existing_id}`}>
-                        <Button variant="ghost" size="sm">
-                          <ExternalLink className="h-3 w-3 mr-1" />詳細
-                        </Button>
-                      </Link>
-                    </div>
-                  ) : (
-                    <>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={task.approval.enabled}
-                          onChange={e => updateTaskApproval(task.id, 'enabled', e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                        <ClipboardCheck className="h-4 w-4 text-blue-500" />
-                        <span className="text-sm font-medium">承認申請を行う</span>
-                      </label>
-
-                      {task.approval.enabled && (
-                        <div className="mt-3 ml-6 space-y-3 rounded-lg border border-blue-200 bg-blue-50/30 p-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs">申請タイトル <span className="text-red-500">*</span></Label>
-                            <Input
-                              placeholder="申請タイトル"
-                              value={task.approval.title}
-                              onChange={e => updateTaskApproval(task.id, 'title', e.target.value)}
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-xs">カテゴリ</Label>
-                            <Select value={task.approval.category} onValueChange={v => updateTaskApproval(task.id, 'category', v)}>
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                {APPROVAL_CATEGORIES.map(c => (
-                                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {task.approval.category === 'other' && (
-                            <div className="space-y-2">
-                              <Label className="text-xs">カテゴリ名 <span className="text-red-500">*</span></Label>
-                              <Input
-                                placeholder="カテゴリ名を入力"
-                                value={task.approval.custom_category}
-                                onChange={e => updateTaskApproval(task.id, 'custom_category', e.target.value)}
-                              />
-                            </div>
-                          )}
-
-                          {task.approval.category === 'equipment_purchase' && (
-                            <>
-                              <div className="space-y-2">
-                                <Label className="text-xs">使用目的</Label>
-                                <Input
-                                  placeholder="例: 営業資料の印刷用"
-                                  value={task.approval.equipment_purpose}
-                                  onChange={e => updateTaskApproval(task.id, 'equipment_purpose', e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label className="text-xs">使用者</Label>
-                                <Input
-                                  placeholder="例: 営業部 田中太郎"
-                                  value={task.approval.equipment_user}
-                                  onChange={e => updateTaskApproval(task.id, 'equipment_user', e.target.value)}
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          <div className="space-y-2">
-                            <Label className="text-xs">金額</Label>
-                            <Input
-                              type="number"
-                              placeholder="金額（円）"
-                              value={task.approval.amount}
-                              onChange={e => updateTaskApproval(task.id, 'amount', e.target.value)}
-                            />
-                            {task.approval.amount && (
-                              <p className="text-xs text-muted-foreground">
-                                この金額には{requiredSteps}段階の承認が必要です
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-xs">説明（任意）</Label>
-                            <Textarea
-                              placeholder="申請の詳細を入力"
-                              value={task.approval.description}
-                              onChange={e => updateTaskApproval(task.id, 'description', e.target.value)}
-                              rows={2}
-                            />
-                          </div>
-
-                          {/* Approvers */}
-                          <div className="space-y-2">
-                            <Label className="text-xs">承認者</Label>
-                            {task.approval.approvers.length > 0 && (
-                              <div className="space-y-1">
-                                {task.approval.approvers.map((uid, index) => {
-                                  const member = members.find(m => m.id === uid)
-                                  return (
-                                    <div key={uid} className="flex items-center gap-2 rounded border bg-white p-2">
-                                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
-                                        {index + 1}
-                                      </span>
-                                      <span className="flex-1 text-sm">{member?.name || '不明'}{uid === defaultApproverId && <span className="text-xs text-blue-600 ml-1">(部署長)</span>}</span>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0"
-                                        onClick={() => removeApproverFromTask(task.id, uid)}
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                            <Select value="" onValueChange={v => addApproverToTask(task.id, v)}>
-                              <SelectTrigger><SelectValue placeholder="承認者を追加..." /></SelectTrigger>
-                              <SelectContent>
-                                {members
-                                  .filter(m => !task.approval.approvers.includes(m.id))
-                                  .map(m => (
-                                    <SelectItem key={m.id} value={m.id}>
-                                      {m.name}{m.department?.name ? ` (${m.department.name})` : ''}
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* File URL */}
-                          <div className="space-y-2">
-                            <Label className="text-xs">関連ファイルURL（任意）</Label>
-                            <div className="flex items-center gap-2">
-                              <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                              <Input
-                                type="url"
-                                placeholder="https://www.dropbox.com/... や Google Drive のリンク等"
-                                value={task.approval.file_url}
-                                onChange={e => updateTaskApproval(task.id, 'file_url', e.target.value)}
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground">Dropbox、Google Drive 等の共有リンクを入力してください</p>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+          <TaskListEditor
+            tasks={tasks}
+            today={today}
+            members={members}
+            defaultApproverId={defaultApproverId}
+            getRequiredSteps={getRequiredSteps}
+            updateTask={updateTask}
+            updateTaskApproval={updateTaskApproval}
+            addTask={addTask}
+            removeTask={removeTask}
+            addApproverToTask={addApproverToTask}
+            removeApproverFromTask={removeApproverFromTask}
+            expandedParents={expandedParents}
+            toggleExpand={toggleExpand}
+            isDueDateLocked={isDeadlineLocked}
+            renderAfterMeta={renderDeadlineExtension}
+          />
         </CardContent>
       </Card>
 
