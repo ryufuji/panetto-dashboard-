@@ -44,7 +44,7 @@ export async function POST(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
         'start_time, end_time, submitted_at, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
-        'tasks:report_tasks(id, title, description, memo, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
+        'tasks:report_tasks(id, title, description, memo, purpose, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
       )
       .eq('id', id)
       .single()
@@ -116,6 +116,7 @@ export async function POST(
         estimated_hours: t.estimated_hours,
         due_date: t.due_date,
         memo: t.memo || null,
+        purpose: t.purpose || null,
         description: t.description || null,
         actual_url: t.actual_url || null,
         children: (childByParent.get(t.id) || []).map((c: any) => ({ title: c.title })),

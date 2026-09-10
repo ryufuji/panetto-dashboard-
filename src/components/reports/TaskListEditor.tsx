@@ -203,9 +203,15 @@ export function TaskListEditor({
 
             {renderAfterMeta?.(task)}
 
+            {/* 備考・メモ */}
+            <div className="space-y-1">
+              <Label className="text-xs">備考・メモ (任意)<HelpTip text="補足情報・懸念事項・引き継ぎ事項など" /></Label>
+              <Textarea placeholder="備考やメモを入力" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
+            </div>
+
             {/* 目的 */}
             <div className="space-y-1">
-              <Label className="text-xs">目的<HelpTip text="このタスクに取り組む理由・背景・達成したい目標" /></Label>
+              <Label className="text-xs">目的<HelpTip text="このタスクに取り組む理由・背景。メモと同じく日報通知に反映されます" /></Label>
               <Textarea placeholder="この課題の目的・背景" value={task.purpose || ''} onChange={e => updateTask(task.id, 'purpose', e.target.value)} rows={2} />
             </div>
 
@@ -246,11 +252,6 @@ export function TaskListEditor({
               )}
             </div>
 
-            {/* 備考・メモ */}
-            <div className="space-y-1">
-              <Label className="text-xs">備考・メモ (任意)<HelpTip text="補足情報・懸念事項・引き継ぎ事項など" /></Label>
-              <Textarea placeholder="備考やメモを入力" value={task.memo || ''} onChange={e => updateTask(task.id, 'memo', e.target.value)} rows={2} />
-            </div>
 
             {/* 進行中・実績URL */}
             <div className="space-y-1">

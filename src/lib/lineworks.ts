@@ -347,6 +347,7 @@ export type LineWorksTaskInfo = {
   due_date?: string | null
   memo?: string | null             // 備考・メモ (なければ description でフォールバック)
   description?: string | null
+  purpose?: string | null          // 目的・背景 (メモとは別行で出力)
   actual_url?: string | null       // 進行中・実績URL (証跡)
   children?: { title: string }[]   // 子タスクタイトルのみ
 }
@@ -466,6 +467,9 @@ export function formatReportSubmittedMessage(params: {
 
     const memo = (t.memo && t.memo.trim()) || (t.description && t.description.trim()) || ''
     if (memo) lines.push(`メモ：${memo}`)
+    // 目的欄に書かれた内容も落とさず通知する（メモと取り違えても内容が消えないように）
+    const purpose = (t.purpose && t.purpose.trim()) || ''
+    if (purpose) lines.push(`目的：${purpose}`)
     if (t.due_date) lines.push(`期日：${t.due_date}`)
     if (t.actual_url && t.actual_url.trim()) {
       // URL を確実にクリッカブルにするため、URL の前を半角空白にする
