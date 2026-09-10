@@ -583,7 +583,7 @@ export default function NewReportPage() {
           progress_rate: t.progress_rate ?? 0,
           task_type: t.task_type || '',
           priority: t.priority || 'medium',
-          start_date: today,
+          start_date: t.start_date || today,  // 引き継ぎ元の開始日を保持（当日で上書きしない）
           due_date: t.due_date && t.due_date >= today ? t.due_date : today,
           parent_id: null,
           approval: defaultApproval(),

@@ -38,7 +38,36 @@ interface CarryOverTask {
   order_index: number
   report_date: string
   children: CarryOverTask[]
+  // v2 項目（API は report_tasks の全列を返す）
+  purpose?: string | null
+  memo?: string | null
+  actual_url?: string | null
+  task_status?: string | null
+  target_norma_count?: number | null
+  target_norma_amount?: number | null
+  no_norma?: boolean | null
+  no_due_date?: boolean | null
+  is_recurring?: boolean | null
+  recurrence_pattern?: string | null
 }
+
+// 引き継ぎ元の v2 項目をそのまま持ち越す（備考・実績URL・目的・ステータス・ノルマ・定期設定）
+const carryV2 = (t: CarryOverTask, resetProgress: boolean) => ({
+  purpose: t.purpose || '',
+  memo: t.memo || '',
+  actual_url: t.actual_url || '',
+  task_status: resetProgress ? '未着手' : (t.task_status || '未着手'),
+  target_norma_count: t.target_norma_count != null ? String(t.target_norma_count) : '',
+  target_norma_amount: t.target_norma_amount != null ? String(t.target_norma_amount) : '',
+  today_result_count: '',
+  today_result_amount: '',
+  no_norma: !!t.no_norma,
+  no_due_date: !!t.no_due_date,
+  is_recurring: !!t.is_recurring,
+  recurrence_pattern: (t.is_recurring && t.recurrence_pattern) ? (t.recurrence_pattern as Task['recurrence_pattern']) : undefined,
+  is_omitted: false,
+  shared_user_ids: [] as string[],
+})
 
 interface TaskCarryOverMenuProps {
   tasks: Task[]
@@ -86,11 +115,12 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
         progress_rate: resetProgress ? 0 : pt.progress_rate,
         task_type: pt.task_type || '',
         priority: pt.priority || 'medium',
-        start_date: today,
+        start_date: resetProgress ? today : (pt.start_date || today),  // 未完了の引き継ぎは元の開始日を保持（完了タスクの再開は当日）
         // 期限切れのまま引き継ぐと即座に再び期日遅れになるため当日へ繰り上げる
         due_date: pt.due_date && pt.due_date >= today ? pt.due_date : today,
         parent_id: null,
         approval: defaultApproval(),
+        ...carryV2(pt, resetProgress),
       })
 
       for (const ct of pt.children || []) {
@@ -103,10 +133,11 @@ export function TaskCarryOverMenu({ tasks, setTasks }: TaskCarryOverMenuProps) {
           progress_rate: resetProgress ? 0 : ct.progress_rate,
           task_type: ct.task_type || '',
           priority: ct.priority || 'medium',
-          start_date: today,
+          start_date: resetProgress ? today : (ct.start_date || today),
           due_date: ct.due_date && ct.due_date >= today ? ct.due_date : today,
           parent_id: localId,
           approval: defaultApproval(),
+          ...carryV2(ct, resetProgress),
         })
       }
     }
