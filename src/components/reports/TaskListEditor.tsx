@@ -95,10 +95,11 @@ export function TaskListEditor({
         const locked = isDueDateLocked?.(task) ?? false
         const isExistingNonDraft = !!task.approval.existing_id && task.approval.existing_status !== 'draft'
         return (
-          <div key={task.id} className={`rounded-lg border p-4 space-y-3 ${task.is_recurring ? 'border-emerald-200 bg-emerald-50/30' : ''}`}>
-            <div className="flex items-center gap-2">
+          <div key={task.id} className={`rounded-lg border-2 p-4 space-y-3 shadow-sm ${task.is_recurring ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-300 bg-white'}`}>
+            {/* タスクごとの境目が分かるよう、見出し行を帯にする */}
+            <div className={`-mx-4 -mt-4 mb-1 flex items-center gap-2 rounded-t-md border-b px-4 py-2 ${task.is_recurring ? 'border-emerald-200 bg-emerald-100/60' : 'border-slate-200 bg-slate-100'}`}>
               <GripVertical className="h-4 w-4 text-gray-400" />
-              <span className="text-sm font-medium text-muted-foreground">親タスク {i + 1}</span>
+              <span className="text-sm font-semibold text-slate-700">親タスク {i + 1}</span>
               {task.is_recurring && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                   <Repeat className="h-3 w-3" />定期
