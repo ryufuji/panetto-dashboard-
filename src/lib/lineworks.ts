@@ -392,6 +392,7 @@ export function formatReportSubmittedMessage(params: {
   tasks: LineWorksTaskInfo[]
   plannedTasks?: LineWorksPlannedTask[]
   nextDayPlanText?: string | null  // 明日のタスクのフリーテキスト（plannedTasks が無いときのフォールバック）
+  isResubmit?: boolean             // 提出済み日報の再提出（件名に「再提出」を付ける）
 }): string {
   const {
     userName,
@@ -404,6 +405,7 @@ export function formatReportSubmittedMessage(params: {
     tasks,
     plannedTasks,
     nextDayPlanText,
+    isResubmit,
   } = params
 
   // 「報告日：YYYY-MM-DD HH:MM」用に submitted_at を JST で整形
@@ -435,7 +437,7 @@ export function formatReportSubmittedMessage(params: {
   const affiliation = affiliationParts.join('/')
 
   const lines: string[] = []
-  lines.push(`【日報】${reportDate} ${userName}`)
+  lines.push(`【日報${isResubmit ? '（再提出）' : ''}】${reportDate} ${userName}`)
   lines.push('')
   lines.push(`報告日：${submittedLabel}`)
   if (workTimeLabel) lines.push(`勤務時間：${workTimeLabel}`)

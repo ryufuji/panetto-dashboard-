@@ -729,9 +729,9 @@ export default function EditReportPage() {
         })
       }
 
-      // 提出時はLINE Worksにも通知（draft→submittedの遷移時のみ。既に提出済みなら
-      // notify-submission側でlineworks_notified_atをチェックして二重送信を防ぐ）
-      if (status === 'submitted' && originalStatus !== 'submitted') {
+      // 提出時はLINE Worksにも通知する。提出済みの日報を編集して再提出した場合も
+      // 「再提出」として通知する（同じ提出に対する二重送信は notify-submission 側で抑止）
+      if (status === 'submitted') {
         try {
           const notifyRes = await fetch(`/api/reports/${id}/notify-submission`, { method: 'POST' })
           const notifyJson = await notifyRes.json().catch(() => ({}))

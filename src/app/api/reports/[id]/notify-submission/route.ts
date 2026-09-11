@@ -8,8 +8,10 @@
  *   - 報告者本人のみ呼び出し可（不正発火・スパム防止）
  *
  * 冪等性:
- *   - reports.lineworks_notified_at をチェックし、未送信の場合のみ発火
- *   - 送信成功時にタイムスタンプを記録（再送防止）
+ *   - 初回提出（lineworks_notified_at 無し）は送る
+ *   - 提出済みを編集して再提出（submitted_at が前回通知より後）は「再提出」として送る
+ *   - 同じ提出に対する二重呼び出しはスキップ
+ *   - 送信成功時、lineworks_notified_at を「現在時刻と submitted_at の遅い方」に記録
  */
 
 import { createClient } from '@/lib/supabase/server'
@@ -72,8 +74,16 @@ export async function POST(
       return NextResponse.json({ skipped: 'not_submitted' })
     }
 
-    // 既に通知済みなら送らない（重複防止）
-    if ((report as any).lineworks_notified_at) {
+    // 冪等性: 「最後の通知より後に提出されていれば送る」。
+    //   - 初回提出: lineworks_notified_at が無い → 送る
+    //   - 提出済みを編集して再提出: submitted_at が更新され通知時刻より後 → 「再提出」として送る
+    //   - 同じ提出に対する二重呼び出し: submitted_at <= 通知時刻 → スキップ
+    // submitted_at はクライアント時計で設定されるため、送信後の lineworks_notified_at は
+    // 「サーバー現在時刻」と「submitted_at」の遅い方に揃え、時計ズレで二重送信されないようにする。
+    const notifiedAtMs = (report as any).lineworks_notified_at ? new Date((report as any).lineworks_notified_at).getTime() : 0
+    const submittedAtMs = (report as any).submitted_at ? new Date((report as any).submitted_at).getTime() : 0
+    const isResubmit = notifiedAtMs > 0
+    if (isResubmit && submittedAtMs <= notifiedAtMs + 5_000) {
       return NextResponse.json({ skipped: 'already_notified' })
     }
 
@@ -123,23 +133,24 @@ export async function POST(
       })),
       plannedTasks: plannedSorted.map((p: any) => ({ title: p.title })),
       nextDayPlanText: f.next_day_plan || null,
+      isResubmit,
     })
 
-    console.log(`[NOTIFY] Sending message (length=${message.length}) for report ${id}`)
+    console.log(`[NOTIFY] Sending ${isResubmit ? 'RESUBMIT ' : ''}message (length=${message.length}) for report ${id}`)
     const result = await sendLineWorksMessage(message)
 
     // 送信成功時にタイムスタンプ記録（再送防止）
     if (result.ok) {
       await admin
         .from('reports')
-        .update({ lineworks_notified_at: new Date().toISOString() })
+        .update({ lineworks_notified_at: new Date(Math.max(Date.now(), submittedAtMs)).toISOString() })
         .eq('id', id)
       console.log(`[NOTIFY] Sent successfully for report ${id}`)
     } else {
       console.error(`[NOTIFY] Send failed for report ${id}:`, result)
     }
 
-    return NextResponse.json({ success: result.ok, status: result.status, error: result.error })
+    return NextResponse.json({ success: result.ok, status: result.status, error: result.error, resubmit: isResubmit })
   } catch (err) {
     console.error('[NOTIFY] Error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
