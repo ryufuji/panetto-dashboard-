@@ -78,6 +78,16 @@ export function TaskListEditor({
 }: TaskListEditorProps) {
   const parentTasks = tasks.filter(t => !t.parent_id)
 
+  // 削除前の確認。何も入力していない空のタスクは確認なしで消せるようにする
+  const confirmRemove = (t: Task, childCount = 0) => {
+    const name = t.title.trim()
+    const hasContent = name || (t.description || '').trim() || childCount > 0
+    if (!hasContent) return true
+    const label = name ? `「${name}」` : 'このタスク'
+    const extra = childCount > 0 ? `\n子タスク ${childCount} 件も一緒に削除されます。` : ''
+    return window.confirm(`${label}を削除しますか？${extra}`)
+  }
+
   return (
     <>
       {tasks.some(t => t.is_recurring && !t.parent_id) && (
@@ -107,7 +117,7 @@ export function TaskListEditor({
               )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}><Plus className="h-3 w-3 mr-1" />子タスク</Button>
-              <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeTask(task.id)}><Trash2 className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { if (confirmRemove(task, children.length)) removeTask(task.id) }}><Trash2 className="h-3 w-3" /></Button>
             </div>
             <div>
               <Label className="text-xs">タスク名（親）<HelpTip text="この日報で対応した業務内容" /></Label>
@@ -314,7 +324,7 @@ export function TaskListEditor({
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">子タスク {j + 1}</span>
                   <div className="flex-1" />
-                  <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => removeTask(child.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => { if (confirmRemove(child)) removeTask(child.id) }}><Trash2 className="h-3 w-3" /></Button>
                 </div>
                 <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
