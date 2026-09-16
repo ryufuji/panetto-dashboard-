@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { TaskListEditor, HelpTip } from '@/components/reports/TaskListEditor'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { filterCurrentOverdue } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -205,8 +206,11 @@ export default function NewReportPage() {
         .lt('progress_rate', 100)
         .order('due_date', { ascending: true })
         .limit(50)
+      // 後日の日報で完了にしたタスクの古い行を除外（期日遅れ一覧ページと同じ判定）
+      const userIdMap = new Map((myReports || []).map((r: any) => [r.id, user.id]))
+      const current = await filterCurrentOverdue(supabase, (od || []) as any[], reportIds, dateMap, userIdMap)
       if (!cancelled) {
-        const enriched = (od || []).map((t: any) => ({
+        const enriched = current.map((t: any) => ({
           ...t,
           report_date: dateMap.get(t.report_id) || '',
         }))

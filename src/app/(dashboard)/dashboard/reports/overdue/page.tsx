@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { filterCurrentOverdue } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -71,36 +72,10 @@ export default function OverdueTasksPage() {
         .order('due_date', { ascending: true })
         .limit(200)
 
-      // 同じタスクは日報ごとに行が分かれるため、「同じ人・同じタスク名」の最新の日報の行で状態を判定する。
-      // 後日の日報で完了にした（または期日を延ばした）タスクは、古い日報の行が期日遅れのまま残らないよう除外する。
-      const candidates = tasks || []
-      const titles = [...new Set(candidates.map((t: any) => (t.title || '').trim()).filter(Boolean))]
-      const latestKey = (userId: string, title: string) => `${userId}\u0000${title.trim()}`
-      const latestByKey = new Map<string, { id: string; report_date: string; progress_rate: number; task_status: string | null; due_date: string | null }>()
-      if (titles.length > 0) {
-        const { data: sameTitle } = await supabase
-          .from('report_tasks')
-          .select('id, title, due_date, progress_rate, task_status, report_id')
-          .in('report_id', reportIds)
-          .in('title', titles)
-          .is('parent_task_id', null)
-        for (const t of (sameTitle || []) as any[]) {
-          const key = latestKey(userIdMap.get(t.report_id), t.title)
-          const rd = dateMap.get(t.report_id) || ''
-          const cur = latestByKey.get(key)
-          if (!cur || rd > cur.report_date) latestByKey.set(key, { id: t.id, report_date: rd, progress_rate: t.progress_rate ?? 0, task_status: t.task_status, due_date: t.due_date })
-        }
-      }
-      const isCurrentOverdue = (t: any) => {
-        const latest = latestByKey.get(latestKey(userIdMap.get(t.report_id), t.title))
-        if (!latest) return true
-        if (latest.id !== t.id) return false // より新しい日報の行があるので、そちらで判定される
-        return (latest.progress_rate ?? 0) < 100 && latest.task_status !== '完了'
-      }
+      const current = await filterCurrentOverdue(supabase, tasks || [], reportIds, dateMap, userIdMap)
 
       if (!cancelled) {
-        const enriched = candidates
-          .filter(isCurrentOverdue)
+        const enriched = current
           .map((t: any) => ({
             ...t,
             report_date: dateMap.get(t.report_id) || '',
