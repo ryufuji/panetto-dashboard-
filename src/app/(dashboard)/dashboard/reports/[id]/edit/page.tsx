@@ -45,6 +45,7 @@ export default function EditReportPage() {
   const [issues, setIssues] = useState('')
   const [tasks, setTasks] = useState<Task[]>([])
   const [originalStatus, setOriginalStatus] = useState('')
+  const isSubmittedReport = originalStatus === 'submitted'
   const [members, setMembers] = useState<any[]>([])
   const [allMembers, setAllMembers] = useState<any[]>([])
   const [thresholdRules, setThresholdRules] = useState<any[]>([])
@@ -553,7 +554,10 @@ export default function EditReportPage() {
           progress_rate: computedProgressRate,
           next_day_plan: nextDayPlan || null,
           status,
-          submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+          // 提出済みの日報を更新するときは元の提出日時を残す
+          ...(status !== 'submitted'
+            ? { submitted_at: null }
+            : isSubmittedReport ? {} : { submitted_at: new Date().toISOString() }),
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -750,7 +754,7 @@ export default function EditReportPage() {
         }
       }
 
-      toast.success(status === 'draft' ? '下書きを保存しました' : '日報を提出しました')
+      toast.success(status === 'draft' ? '下書きを保存しました' : isSubmittedReport ? '日報を更新しました' : '日報を提出しました')
       router.push(`/dashboard/reports/${id}`)
     } catch (err: any) {
       toast.error(err.message || '保存に失敗しました')
@@ -1058,17 +1062,23 @@ export default function EditReportPage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-3">
+      {isSubmittedReport && (
+        <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          この日報は提出済みです。内容を修正して「更新して保存」を押しても、確認者への通知（LINE Works）は再送されません。
+          「下書きに戻す」を押すと提出が取り消され、下書きに戻ります。
+        </div>
+      )}
+      <div className="flex flex-wrap justify-end gap-3">
         <Link href={`/dashboard/reports/${id}`}>
           <Button variant="ghost">キャンセル</Button>
         </Link>
         <Button variant="outline" onClick={() => handleSubmit('draft')} disabled={saving}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          下書き保存
+          {isSubmittedReport ? '下書きに戻す' : '下書き保存'}
         </Button>
         <Button onClick={() => handleSubmit('submitted')} disabled={saving}>
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-          提出
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : isSubmittedReport ? <Save className="mr-2 h-4 w-4" /> : <Send className="mr-2 h-4 w-4" />}
+          {isSubmittedReport ? '更新して保存' : '提出'}
         </Button>
       </div>
     </div>
