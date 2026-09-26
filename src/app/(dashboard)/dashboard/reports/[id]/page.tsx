@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2, CalendarClock, Check, X, Eye, Users, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Clock, User, Calendar, Target, Loader2, Send, Trash2, Pencil, ArrowUpRight, ClipboardCheck, ExternalLink, Link2, CalendarClock, Check, X, Eye, Users, ChevronDown, ChevronRight, Repeat } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -324,7 +324,11 @@ export default function ReportDetailPage() {
           <Calendar className="h-5 w-5 text-blue-500" /><div><p className="text-xs text-muted-foreground">日付</p><p className="font-medium">{report.report_date}</p></div>
         </CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 p-4">
-          <Clock className="h-5 w-5 text-green-500" /><div><p className="text-xs text-muted-foreground">稼働時間</p><p className="font-medium">{report.work_hours ? `${report.work_hours}時間` : '-'}</p></div>
+          <Clock className="h-5 w-5 text-green-500" /><div><p className="text-xs text-muted-foreground">稼働時間</p><p className="font-medium">{report.work_hours ? `${report.work_hours}時間` : '-'}</p>
+            {(report.start_time || report.end_time) && (
+              <p className="text-xs text-muted-foreground">{String(report.start_time || '').slice(0, 5) || '-'} 〜 {String(report.end_time || '').slice(0, 5) || '-'}</p>
+            )}
+          </div>
         </CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 p-4">
           <Target className="h-5 w-5 text-purple-500" /><div><p className="text-xs text-muted-foreground">進捗率</p><p className="font-medium">{report.progress_rate != null ? `${report.progress_rate}%` : '-'}</p></div>
@@ -343,15 +347,29 @@ export default function ReportDetailPage() {
                   <div key={task.id} className="rounded-lg border p-4">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-medium">{task.title}</h3>
-                      <Badge variant={task.priority === 'high' ? 'destructive' : task.priority === 'low' ? 'outline' : 'secondary'}>
-                        {task.priority === 'high' ? '高' : task.priority === 'low' ? '低' : '中'}
-                      </Badge>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {task.is_recurring && (
+                          <Badge variant="outline" className="gap-1 border-emerald-300 text-emerald-700">
+                            <Repeat className="h-3 w-3" />定期
+                          </Badge>
+                        )}
+                        {task.task_status && <Badge variant="outline">{task.task_status}</Badge>}
+                        <Badge variant={task.priority === 'high' ? 'destructive' : task.priority === 'low' ? 'outline' : 'secondary'}>
+                          {task.priority === 'high' ? '高' : task.priority === 'low' ? '低' : '中'}
+                        </Badge>
+                      </div>
                     </div>
-                    {task.description && <p className="text-sm text-muted-foreground mb-2">{task.description}</p>}
-                    <div className="flex gap-4 text-sm text-muted-foreground">
+                    {task.description && <p className="text-sm text-muted-foreground mb-2 whitespace-pre-wrap">{task.description}</p>}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                       <span>見積: {task.estimated_hours || '-'}h</span>
                       <span>実績: {task.actual_hours || '-'}h</span>
                       <span>進捗: {task.progress_rate}%</span>
+                      {task.start_date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          開始: {task.start_date}
+                        </span>
+                      )}
                       {task.due_date && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
@@ -359,6 +377,36 @@ export default function ReportDetailPage() {
                         </span>
                       )}
                     </div>
+
+                    {/* 入力された内容を遡って確認できるよう、目的・備考・実績URL・ノルマも表示する */}
+                    {task.purpose && (
+                      <div className="mt-2 text-sm">
+                        <p className="text-xs text-muted-foreground">目的</p>
+                        <p className="whitespace-pre-wrap">{task.purpose}</p>
+                      </div>
+                    )}
+                    {task.memo && (
+                      <div className="mt-2 text-sm">
+                        <p className="text-xs text-muted-foreground">備考・メモ</p>
+                        <p className="whitespace-pre-wrap">{task.memo}</p>
+                      </div>
+                    )}
+                    {task.actual_url && (
+                      <div className="mt-2 text-sm">
+                        <p className="text-xs text-muted-foreground">進行中・実績URL</p>
+                        <a href={task.actual_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline break-all">
+                          <Link2 className="h-3 w-3 shrink-0" />{task.actual_url}
+                        </a>
+                      </div>
+                    )}
+                    {!task.no_norma && (task.target_norma_count != null || task.target_norma_amount != null || task.today_result_count != null || task.today_result_amount != null) && (
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        {task.target_norma_count != null && <span>ノルマ(件数): {task.target_norma_count}</span>}
+                        {task.target_norma_amount != null && <span>ノルマ(金額): ¥{Number(task.target_norma_amount).toLocaleString()}</span>}
+                        {task.today_result_count != null && <span>成果(件数): {task.today_result_count}</span>}
+                        {task.today_result_amount != null && <span>成果(金額): ¥{Number(task.today_result_amount).toLocaleString()}</span>}
+                      </div>
+                    )}
 
                     {/* Deadline extension status */}
                     {taskExtensions.length > 0 && (
@@ -441,11 +489,17 @@ export default function ReportDetailPage() {
                           <div className="mt-2 ml-4 space-y-2 border-l pl-4">
                             {children.map((child: any) => (
                               <div key={child.id} className="rounded border border-dashed p-3">
-                                <p className="font-medium text-sm">{child.title}</p>
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="font-medium text-sm">{child.title}</p>
+                                  {child.task_status && <Badge variant="outline" className="shrink-0 text-xs">{child.task_status}</Badge>}
+                                </div>
                                 {child.description && (
                                   <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{child.description}</p>
                                 )}
-                                <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                                {child.memo && (
+                                  <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">備考: {child.memo}</p>
+                                )}
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
                                   <span>見積: {child.estimated_hours || '-'}h</span>
                                   <span>実績: {child.actual_hours || '-'}h</span>
                                   <span>進捗: {child.progress_rate}%</span>
