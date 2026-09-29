@@ -9,9 +9,13 @@
  *
  * 冪等性:
  *   - 初回提出（lineworks_notified_at 無し）は送る
- *   - 提出済みを編集して再提出（submitted_at が前回通知より後）は「再提出」として送る
- *   - 同じ提出に対する二重呼び出しはスキップ
- *   - 送信成功時、lineworks_notified_at を「現在時刻と submitted_at の遅い方」に記録
+ *   - 提出済みを編集して更新（updated_at が前回通知より後）は「再提出」として送る
+ *   - 同じ保存に対する二重呼び出しはスキップ
+ *   - 送信成功時、lineworks_notified_at を「現在時刻と updated_at の遅い方」に記録
+ *
+ * 判定に submitted_at ではなく updated_at を使う理由:
+ *   提出済みの日報を編集しても submitted_at（最初に提出した日時）は据え置く仕様のため、
+ *   submitted_at では「その後に内容が更新されたか」を判定できない。
  */
 
 import { createClient } from '@/lib/supabase/server'
@@ -44,7 +48,7 @@ export async function POST(
       .from('reports')
       .select(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
-        'start_time, end_time, submitted_at, lineworks_notified_at, ' +
+        'start_time, end_time, submitted_at, updated_at, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
         'tasks:report_tasks(id, title, description, memo, purpose, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
       )
@@ -81,9 +85,9 @@ export async function POST(
     // submitted_at はクライアント時計で設定されるため、送信後の lineworks_notified_at は
     // 「サーバー現在時刻」と「submitted_at」の遅い方に揃え、時計ズレで二重送信されないようにする。
     const notifiedAtMs = (report as any).lineworks_notified_at ? new Date((report as any).lineworks_notified_at).getTime() : 0
-    const submittedAtMs = (report as any).submitted_at ? new Date((report as any).submitted_at).getTime() : 0
+    const updatedAtMs = (report as any).updated_at ? new Date((report as any).updated_at).getTime() : 0
     const isResubmit = notifiedAtMs > 0
-    if (isResubmit && submittedAtMs <= notifiedAtMs + 5_000) {
+    if (isResubmit && updatedAtMs <= notifiedAtMs + 5_000) {
       return NextResponse.json({ skipped: 'already_notified' })
     }
 
@@ -143,7 +147,7 @@ export async function POST(
     if (result.ok) {
       await admin
         .from('reports')
-        .update({ lineworks_notified_at: new Date(Math.max(Date.now(), submittedAtMs)).toISOString() })
+        .update({ lineworks_notified_at: new Date(Math.max(Date.now(), updatedAtMs)).toISOString() })
         .eq('id', id)
       console.log(`[NOTIFY] Sent successfully for report ${id}`)
     } else {

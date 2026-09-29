@@ -1066,7 +1066,7 @@ export default function EditReportPage() {
 
       {isSubmittedReport && (
         <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-          この日報は提出済みです。内容を修正して「更新して保存」を押しても、確認者への通知（LINE Works）は再送されません。
+          この日報は提出済みです。内容を修正して「更新して保存」を押すと、確認者へ LINE Works で再通知されます（件名に「再提出」と付きます）。
           「下書きに戻す」を押すと提出が取り消され、下書きに戻ります。
         </div>
       )}
