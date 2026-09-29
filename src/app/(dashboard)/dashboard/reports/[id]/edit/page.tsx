@@ -401,8 +401,10 @@ export default function EditReportPage() {
     }))
   }
 
+  // 期日の変更は「提出後」だけ承認（期限延長申請）が要る。下書きの間は自由に編集できる
   const isDeadlineLocked = (task: Task) => {
-    return !!task.db_id && !!task.due_date
+    const isSubmitted = originalStatus === 'submitted' || originalStatus === 'approved'
+    return isSubmitted && !!task.db_id && !!task.due_date
   }
 
   const toggleExtensionForm = (taskId: string) => {
