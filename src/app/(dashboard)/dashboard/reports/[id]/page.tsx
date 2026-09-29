@@ -361,7 +361,7 @@ export default function ReportDetailPage() {
                     </div>
                     {task.description && <p className="text-sm text-muted-foreground mb-2 whitespace-pre-wrap">{task.description}</p>}
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span>見積: {task.estimated_hours || '-'}h</span>
+                      <span>工数: {task.estimated_hours || '-'}h</span>
                       <span>実績: {task.actual_hours || '-'}h</span>
                       <span>進捗: {task.progress_rate}%</span>
                       {task.start_date && (
@@ -500,7 +500,7 @@ export default function ReportDetailPage() {
                                   <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">備考: {child.memo}</p>
                                 )}
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
-                                  <span>見積: {child.estimated_hours || '-'}h</span>
+                                  <span>工数: {child.estimated_hours || '-'}h</span>
                                   <span>実績: {child.actual_hours || '-'}h</span>
                                   <span>進捗: {child.progress_rate}%</span>
                                   {child.due_date && (

@@ -129,7 +129,7 @@ export function TaskListEditor({
             </div>
 
             {/* タスクメタ: 開始日 / 期日 / 進捗 / ステータス / 工数 / 優先度 */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
               <div>
                 <Label className="text-xs">開始日<HelpTip text="このタスクに着手した日" /></Label>
                 <Input type="date" value={task.start_date} onChange={e => updateTask(task.id, 'start_date', e.target.value)} />
@@ -192,7 +192,7 @@ export function TaskListEditor({
                 </>
               )}
               <div>
-                <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="子タスクがある場合は子タスクの合計が自動設定されます。ない場合は見込み時間を入力してください" /></Label>
+                <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="このタスクに見込んだ時間。子タスクがある場合は子タスクの合計が自動設定されます" /></Label>
                 {children.length > 0 ? (
                   <div className="flex items-center h-9 px-3 rounded-md border bg-muted/30 text-sm gap-1">
                     <span className="font-medium">{children.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)}</span>
@@ -201,6 +201,10 @@ export function TaskListEditor({
                 ) : (
                   <Input type="number" step="0.5" placeholder="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
                 )}
+              </div>
+              <div>
+                <Label className="text-xs">実績(h)<HelpTip text="実際にかかった時間。日報詳細の「実績」に表示されます" /></Label>
+                <Input type="number" step="0.5" placeholder="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} />
               </div>
               <div>
                 <Label className="text-xs">優先度<HelpTip text="高：今日必ず完了、中：通常、低：余裕があれば" /></Label>
@@ -329,7 +333,7 @@ export function TaskListEditor({
                 <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
                 <div className="grid grid-cols-5 gap-2">
-                  <div><Label className="text-xs">見積(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
+                  <div><Label className="text-xs">工数(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" placeholder="0" value={child.progress_rate || ''} onChange={e => updateTask(child.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} /></div>
                   <div><Label className="text-xs">開始日</Label><Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} /></div>
