@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, FileText, Store,
-  Building2, Settings, ChevronLeft, ChevronRight,
+  Building2, Settings, ChevronLeft, ChevronRight, X,
   Users, ClipboardList, BarChart3, AlertTriangle, Bug, LayoutTemplate
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
@@ -67,12 +67,34 @@ const navigation: NavItem[] = [
   { name: 'バグ報告', href: 'https://docs.google.com/spreadsheets/d/1j7C9Rhs8tWsxECq7BoNdyF0Nb2KfRRh47qeMDSllwl4/edit?gid=762673576#gid=762673576', icon: Bug, external: true },
 ]
 
-export function Sidebar() {
+/**
+ * サイドバー。
+ * lg 以上では本文の横に並び、ヘッダーの折りたたみボタンで幅を切り替える。
+ * lg 未満では本文を押し出さないよう画面に重ねて出し、ヘッダーのメニューボタンで開閉する。
+ */
+export function Sidebar({ mobileOpen = false, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [openMenus, setOpenMenus] = useState<string[]>(['日報管理', '申請・承認'])
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
   const [userRole, setUserRole] = useState<string>('employee')
+  // 折りたたみは横並びのときだけ意味を持つ。重ねて表示している間は常に項目名を出す
+  const [isWide, setIsWide] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const sync = () => setIsWide(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileOpen || !onClose) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileOpen, onClose])
 
   useEffect(() => {
     const supabase = createClient()
@@ -107,22 +129,39 @@ export function Sidebar() {
     )
   }
 
+  const isCollapsed = collapsed && isWide
+
   return (
     <aside className={cn(
       'flex flex-col border-r bg-white dark:bg-slate-950 transition-all duration-300',
-      collapsed ? 'w-16' : 'w-64'
+      // lg 未満は画面に重ねる(fixed なので本文の幅を取らない)。lg 以上は従来どおり横に並ぶ
+      'fixed inset-y-0 left-0 z-50 w-64 lg:static lg:z-auto lg:translate-x-0',
+      // 閉じている間は画面外。max-lg:invisible でキーボード操作の順番からも外す
+      mobileOpen ? 'translate-x-0 shadow-xl lg:shadow-none' : '-translate-x-full max-lg:invisible',
+      isCollapsed ? 'lg:w-16' : 'lg:w-64'
     )}>
       <div className="flex h-16 items-center justify-between border-b px-4">
-        {!collapsed && (
-          <Link href="/dashboard" className="flex items-center gap-2">
+        {!isCollapsed && (
+          <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
               <Building2 className="h-4 w-4" />
             </div>
             <span className="font-bold text-sm">パネット</span>
           </Link>
         )}
-        <button onClick={() => setCollapsed(!collapsed)} className="rounded-lg p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800">
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          aria-label={isCollapsed ? 'メニューを広げる' : 'メニューを折りたたむ'}
+          className="hidden rounded-lg p-1.5 hover:bg-gray-100 lg:block dark:hover:bg-gray-800"
+        >
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
+        <button
+          onClick={onClose}
+          aria-label="メニューを閉じる"
+          className="rounded-lg p-1.5 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800"
+        >
+          <X className="h-4 w-4" />
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -133,14 +172,14 @@ export function Sidebar() {
               ? { target: '_blank', rel: 'noopener noreferrer' }
               : {}
             return (
-              <Link key={item.name} href={item.href} {...linkProps}
+              <Link key={item.name} href={item.href} {...linkProps} onClick={onClose}
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   isActive ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
                     : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800'
                 )}>
                 <item.icon className="h-5 w-5 flex-shrink-0" />
-                {!collapsed && <span>{item.name}</span>}
+                {!isCollapsed && <span>{item.name}</span>}
               </Link>
             )
           }
@@ -170,19 +209,19 @@ export function Sidebar() {
                   hasActiveChild ? 'text-blue-700 dark:text-blue-400' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800'
                 )}>
                 <item.icon className="h-5 w-5 flex-shrink-0" />
-                {!collapsed && (
+                {!isCollapsed && (
                   <>
                     <span className="flex-1 text-left">{item.name}</span>
                     <ChevronRight className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-90')} />
                   </>
                 )}
               </button>
-              {!collapsed && isOpen && item.children && (
+              {!isCollapsed && isOpen && item.children && (
                 <div className="ml-4 mt-1 space-y-1 border-l pl-4">
                   {item.children.map((child) => {
                     const isActive = activeChildHref === child.href
                     return (
-                      <Link key={child.href} href={child.href}
+                      <Link key={child.href} href={child.href} onClick={onClose}
                         className={cn(
                           'flex items-center justify-between rounded-lg px-3 py-1.5 text-sm transition-colors',
                           isActive ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
