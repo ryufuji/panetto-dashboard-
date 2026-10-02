@@ -212,8 +212,21 @@ export async function POST(request: NextRequest) {
       // ── UPDATE ──
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const userId = (existing as any).id
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oldEmail: string | null = (existing as any).email || null
+      // ログインは login_id → users.email → 認証(auth)側のメールで照合する。
+      // users.email だけ変えると認証側と食い違ってログインできなくなるため、認証側も同じ値に揃える。
+      const newEmail = pu.email || (pu.dashboard_login_id ? `${pu.dashboard_login_id}@panet.local` : null)
+      const emailChanged = !!newEmail && newEmail !== oldEmail
+      if (emailChanged) {
+        const { error: authErr } = await admin.auth.admin.updateUserById(userId, { email: newEmail, email_confirm: true })
+        if (authErr) {
+          console.error('[PANET_WEBHOOK] auth email update error:', authErr.message)
+          return NextResponse.json({ error: authErr.message }, { status: 500 })
+        }
+      }
       const { error: updErr } = await admin.from('users').update({
-        email: pu.email,
+        email: newEmail || oldEmail,
         name: pu.display_name,
         department_id: departmentId,
         office_id: officeId,
@@ -233,9 +246,15 @@ export async function POST(request: NextRequest) {
       }).eq('id', userId)
       if (updErr) {
         console.error('[PANET_WEBHOOK] update users error:', updErr.message)
+        // 認証側だけ新メールになっているとログインできないため、元に戻す
+        if (emailChanged && oldEmail) {
+          await admin.auth.admin.updateUserById(userId, { email: oldEmail, email_confirm: true }).catch((e) =>
+            console.error('[PANET_WEBHOOK] auth email rollback failed:', e)
+          )
+        }
         return NextResponse.json({ error: updErr.message }, { status: 500 })
       }
-      return NextResponse.json({ ok: true, action: 'updated', user_id: userId })
+      return NextResponse.json({ ok: true, action: 'updated', user_id: userId, email_changed: emailChanged })
     }
 
     // ── 新規作成 (auth.users + public.users) ──
