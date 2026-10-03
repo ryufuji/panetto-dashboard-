@@ -217,7 +217,10 @@ export async function POST(request: NextRequest) {
       // ログインは login_id → users.email → 認証(auth)側のメールで照合する。
       // users.email だけ変えると認証側と食い違ってログインできなくなるため、認証側も同じ値に揃える。
       const newEmail = pu.email || (pu.dashboard_login_id ? `${pu.dashboard_login_id}@panet.local` : null)
-      const emailChanged = !!newEmail && newEmail !== oldEmail
+      // users.email ではなく認証側の実際のメールと比べる（過去にずれていても、ここで必ず揃える）
+      const { data: authUser } = await admin.auth.admin.getUserById(userId)
+      const currentAuthEmail = authUser?.user?.email || oldEmail
+      const emailChanged = !!newEmail && newEmail.toLowerCase() !== (currentAuthEmail || '').toLowerCase()
       if (emailChanged) {
         const { error: authErr } = await admin.auth.admin.updateUserById(userId, { email: newEmail, email_confirm: true })
         if (authErr) {
@@ -247,8 +250,8 @@ export async function POST(request: NextRequest) {
       if (updErr) {
         console.error('[PANET_WEBHOOK] update users error:', updErr.message)
         // 認証側だけ新メールになっているとログインできないため、元に戻す
-        if (emailChanged && oldEmail) {
-          await admin.auth.admin.updateUserById(userId, { email: oldEmail, email_confirm: true }).catch((e) =>
+        if (emailChanged && currentAuthEmail) {
+          await admin.auth.admin.updateUserById(userId, { email: currentAuthEmail, email_confirm: true }).catch((e) =>
             console.error('[PANET_WEBHOOK] auth email rollback failed:', e)
           )
         }
