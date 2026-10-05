@@ -280,6 +280,16 @@ export default function EditReportPage() {
             today_result_count: ct.today_result_count != null ? String(ct.today_result_count) : '',
             today_result_amount: ct.today_result_amount != null ? String(ct.today_result_amount) : '',
             no_norma: !!ct.no_norma,
+            // 以下は読み落とすと保存のたびに空で上書きされる
+            memo: ct.memo || '',
+            purpose: ct.purpose || '',
+            actual_url: ct.actual_url || '',
+            no_due_date: !!ct.no_due_date,
+            is_recurring: !!ct.is_recurring,
+            recurrence_pattern: ct.recurrence_pattern || undefined,
+            is_omitted: !!ct.is_omitted,
+            is_skipped_today: !!ct.is_skipped_today,
+            shared_user_ids: sharedMap.get(ct.id) || [],
           })
         })
       })
@@ -492,6 +502,14 @@ export default function EditReportPage() {
           setSaving(false)
           return
         }
+        const untitledWithChildren = tasks.filter(
+          t => !t.parent_id && !t.title.trim() && tasks.some(c => c.parent_id === t.id && c.title.trim())
+        )
+        if (untitledWithChildren.length > 0) {
+          toast.error('タスク名が空の親タスクに子タスクが入っています。親タスクの名前を入れてください（このままでは子タスクが保存されません）')
+          setSaving(false)
+          return
+        }
         if (!tasks.some(t => !t.parent_id && t.title.trim() && !t.is_skipped_today)) {
           toast.error('日報に載せるタスクを1件以上入力してください（「今日は実施しない」にしたタスクは数えません）')
           setSaving(false)
@@ -580,7 +598,7 @@ export default function EditReportPage() {
         const estimatedHours = parentChildren.length > 0
           ? parentChildren.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)
           : (pt.estimated_hours ? parseFloat(pt.estimated_hours) : null)
-        const { data: savedTask } = await supabase.from('report_tasks').insert({
+        const { data: savedTask, error: parentError } = await supabase.from('report_tasks').insert({
           report_id: id,
           title: pt.title,
           description: pt.description || null,
@@ -607,6 +625,9 @@ export default function EditReportPage() {
           is_omitted: !!pt.is_omitted,
           is_skipped_today: !!pt.is_skipped_today,
         }).select().single()
+        if (parentError || !savedTask) {
+          throw new Error(`タスク「${pt.title}」の保存に失敗しました: ${parentError?.message || '登録結果を取得できませんでした'}`)
+        }
 
         // 共有ユーザー（参照のみ）を保存
         if (savedTask && pt.shared_user_ids && pt.shared_user_ids.length > 0) {
@@ -702,9 +723,9 @@ export default function EditReportPage() {
         const children = tasks.filter(t => t.parent_id === pt.id && t.title.trim())
         for (let j = 0; j < children.length; j++) {
           const ct = children[j]
-          await supabase.from('report_tasks').insert({
+          const { error: childError } = await supabase.from('report_tasks').insert({
             report_id: id,
-            parent_task_id: savedTask?.id,
+            parent_task_id: savedTask.id,
             title: ct.title,
             description: ct.description || null,
             estimated_hours: ct.estimated_hours ? parseFloat(ct.estimated_hours) : null,
@@ -721,7 +742,18 @@ export default function EditReportPage() {
             today_result_count: ct.today_result_count ? parseInt(ct.today_result_count) : null,
             today_result_amount: ct.today_result_amount ? parseFloat(ct.today_result_amount) : null,
             no_norma: !!ct.no_norma,
+            memo: ct.memo || null,
+            purpose: ct.purpose || null,
+            actual_url: ct.actual_url || null,
+            no_due_date: !!ct.no_due_date,
+            is_recurring: !!ct.is_recurring,
+            recurrence_pattern: ct.is_recurring ? (ct.recurrence_pattern || 'daily') : null,
+            is_omitted: !!ct.is_omitted,
+            is_skipped_today: !!ct.is_skipped_today,
           })
+          if (childError) {
+            throw new Error(`子タスク「${ct.title}」の保存に失敗しました: ${childError.message}`)
+          }
         }
       }
 
