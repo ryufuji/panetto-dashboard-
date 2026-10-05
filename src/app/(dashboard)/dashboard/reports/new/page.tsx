@@ -329,6 +329,8 @@ export default function NewReportPage() {
         is_recurring: !!t.is_recurring,
         recurrence_pattern: t.recurrence_pattern || undefined,
         is_omitted: !!t.is_omitted,
+        // 「今日は実施しない」は その日限りの状態なので読み込み時に引き継がない
+        is_skipped_today: false,
         shared_user_ids: sharedMap.get(t.id) || [],
       } as Task))
       if (isDraft) {
@@ -604,6 +606,7 @@ export default function NewReportPage() {
           is_recurring: !!t.is_recurring,
           recurrence_pattern: t.recurrence_pattern || undefined,
           is_omitted: false,
+          is_skipped_today: false,  // 前日の「今日は実施しない」は持ち越さない
           shared_user_ids: [],
         } as Task)
 
@@ -711,6 +714,7 @@ export default function NewReportPage() {
           is_recurring: true,
           recurrence_pattern: (t.recurrence_pattern as RecurrencePattern) || 'daily',
           is_omitted: false,
+          is_skipped_today: false,
           shared_user_ids: [],
         } as Task)
       }
@@ -788,7 +792,7 @@ export default function NewReportPage() {
 
   // 親タスクの進捗率の単純平均（親なし時は0）
   const computedProgressRate = (() => {
-    const parentTasks = tasks.filter(t => t.parent_id === null && t.title.trim() !== '')
+    const parentTasks = tasks.filter(t => t.parent_id === null && t.title.trim() !== '' && !t.is_skipped_today)
     if (parentTasks.length === 0) return 0
     const sum = parentTasks.reduce((s, t) => s + (Number(t.progress_rate) || 0), 0)
     return Math.round(sum / parentTasks.length)
@@ -843,9 +847,10 @@ export default function NewReportPage() {
           setLoading(false)
           return
         }
-        const titledParents = tasks.filter(t => !t.parent_id && t.title.trim())
+        // 「今日は実施しない」タスクはこの日の実施内容ではないので、工数などの入力は求めない
+        const titledParents = tasks.filter(t => !t.parent_id && t.title.trim() && !t.is_skipped_today)
         if (titledParents.length === 0) {
-          toast.error('タスクを1件以上入力してください')
+          toast.error('日報に載せるタスクを1件以上入力してください（「今日は実施しない」にしたタスクは数えません）')
           setLoading(false)
           return
         }
@@ -860,7 +865,7 @@ export default function NewReportPage() {
       }
 
       // Validate approval forms
-      const parentTasksWithApproval = tasks.filter(t => !t.parent_id && t.title && t.approval.enabled)
+      const parentTasksWithApproval = tasks.filter(t => !t.parent_id && t.title && t.approval.enabled && !t.is_skipped_today)
       for (const pt of parentTasksWithApproval) {
         if (!pt.approval.title.trim()) {
           toast.error(`タスク「${pt.title}」の承認申請タイトルを入力してください`)
@@ -933,6 +938,7 @@ export default function NewReportPage() {
           is_recurring: !!pt.is_recurring,
           recurrence_pattern: pt.is_recurring ? (pt.recurrence_pattern || 'daily') : null,
           is_omitted: !!pt.is_omitted,
+          is_skipped_today: !!pt.is_skipped_today,
         }).select().single()
 
         // 共有ユーザー (参照のみ) を保存
@@ -942,8 +948,8 @@ export default function NewReportPage() {
           )
         }
 
-        // Create approval request if enabled
-        if (pt.approval.enabled && savedTask) {
+        // Create approval request if enabled（「今日は実施しない」タスクでは申請しない）
+        if (pt.approval.enabled && savedTask && !pt.is_skipped_today) {
           const createRes = await fetch('/api/approval-requests', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

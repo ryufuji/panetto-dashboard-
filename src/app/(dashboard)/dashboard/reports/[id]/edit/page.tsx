@@ -248,6 +248,7 @@ export default function EditReportPage() {
           is_recurring: !!pt.is_recurring,
           recurrence_pattern: pt.recurrence_pattern || undefined,
           is_omitted: !!pt.is_omitted,
+          is_skipped_today: !!pt.is_skipped_today,
           shared_user_ids: sharedMap.get(pt.id) || [],
           approval,
           deadline_extensions: exts,
@@ -365,7 +366,7 @@ export default function EditReportPage() {
 
   // 親タスクの進捗率の単純平均（親なし時は0）
   const computedProgressRate = (() => {
-    const parentTasks = tasks.filter(t => t.parent_id === null && t.title.trim() !== '')
+    const parentTasks = tasks.filter(t => t.parent_id === null && t.title.trim() !== '' && !t.is_skipped_today)
     if (parentTasks.length === 0) return 0
     const sum = parentTasks.reduce((s, t) => s + (Number(t.progress_rate) || 0), 0)
     return Math.round(sum / parentTasks.length)
@@ -491,8 +492,8 @@ export default function EditReportPage() {
           setSaving(false)
           return
         }
-        if (!tasks.some(t => !t.parent_id && t.title.trim())) {
-          toast.error('タスクを1件以上入力してください')
+        if (!tasks.some(t => !t.parent_id && t.title.trim() && !t.is_skipped_today)) {
+          toast.error('日報に載せるタスクを1件以上入力してください（「今日は実施しない」にしたタスクは数えません）')
           setSaving(false)
           return
         }
@@ -604,6 +605,7 @@ export default function EditReportPage() {
           is_recurring: !!pt.is_recurring,
           recurrence_pattern: pt.is_recurring ? (pt.recurrence_pattern || 'daily') : null,
           is_omitted: !!pt.is_omitted,
+          is_skipped_today: !!pt.is_skipped_today,
         }).select().single()
 
         // 共有ユーザー（参照のみ）を保存
@@ -656,8 +658,8 @@ export default function EditReportPage() {
                 method: 'DELETE',
               })
             }
-          } else if (pt.approval.enabled) {
-            // New approval request
+          } else if (pt.approval.enabled && !pt.is_skipped_today) {
+            // New approval request（「今日は実施しない」タスクでは申請しない）
             const createRes = await fetch('/api/approval-requests', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

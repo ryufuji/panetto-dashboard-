@@ -50,7 +50,7 @@ export async function POST(
         'id, user_id, status, report_date, title, work_hours, progress_rate, next_day_plan, ' +
         'start_time, end_time, submitted_at, updated_at, lineworks_notified_at, ' +
         'user:users(name, department:departments!users_department_id_fkey(name), office:offices!users_office_id_fkey(name)), ' +
-        'tasks:report_tasks(id, title, description, memo, purpose, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index)'
+        'tasks:report_tasks(id, title, description, memo, purpose, actual_url, task_status, progress_rate, priority, estimated_hours, actual_hours, due_date, parent_task_id, order_index, is_skipped_today)'
       )
       .eq('id', id)
       .single()
@@ -96,8 +96,9 @@ export async function POST(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allTasks: any[] = f.tasks || []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // 「今日は実施しない」としたタスクは、この日の実施内容ではないので通知に載せない
     const parentTasks = allTasks
-      .filter((t: any) => !t.parent_task_id)
+      .filter((t: any) => !t.parent_task_id && !t.is_skipped_today)
       .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const childByParent = new Map<string, any[]>()

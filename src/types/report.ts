@@ -53,7 +53,8 @@ export interface Task {
   no_due_date?: boolean                // 期日なし
   is_recurring?: boolean               // 定期タスク (ON のとき recurrence_pattern を参照)
   recurrence_pattern?: RecurrencePattern  // daily / weekly / biweekly / monthly / bimonthly / quarterly / semiannual / yearly
-  is_omitted?: boolean                 // 省略
+  is_omitted?: boolean                 // 省略（旧来のフラグ。表示や集計には影響しない）
+  is_skipped_today?: boolean           // 今日は実施しない（日報に載せないが翌日以降へ引き継ぐ）
   shared_user_ids?: string[]           // 共有ユーザー (参照のみ)
 }
 

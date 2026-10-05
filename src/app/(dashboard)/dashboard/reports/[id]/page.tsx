@@ -244,7 +244,8 @@ export default function ReportDetailPage() {
   }
 
   const st = statusMap[report.status] || statusMap.draft
-  const parentTasks = (report.tasks || []).filter((t: any) => !t.parent_task_id).sort((a: any, b: any) => a.order_index - b.order_index)
+  // 「今日は実施しない」としたタスクは、この日の実施内容ではないので表示しない
+  const parentTasks = (report.tasks || []).filter((t: any) => !t.parent_task_id && !t.is_skipped_today).sort((a: any, b: any) => a.order_index - b.order_index)
   const isAuthor = currentUserId === report.user_id
   const isAdmin = currentUserRole === 'admin'
   const canEdit = isAuthor || isAdmin

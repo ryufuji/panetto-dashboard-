@@ -5,7 +5,7 @@
  * 新規作成ページと編集ページで同じ項目・同じ見た目になるよう、ここに一本化している。
  * ページ固有の要素（編集ページの期限延長申請など）はスロット props で差し込む。
  */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Repeat, Lock, ExternalLink } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Plus, Trash2, GripVertical, X, ClipboardCheck, Link2, ChevronDown, ChevronRight, Repeat, Lock, ExternalLink, CalendarOff, Undo2 } from 'lucide-react'
 import { type Task, TASK_STATUS_OPTIONS, RECURRENCE_PATTERNS, type RecurrencePattern } from '@/types/report'
 
 export function HelpTip({ text }: { text: string }) {
@@ -78,18 +82,59 @@ export function TaskListEditor({
 }: TaskListEditorProps) {
   const parentTasks = tasks.filter(t => !t.parent_id)
 
-  // 削除前の確認。何も入力していない空のタスクは確認なしで消せるようにする
-  const confirmRemove = (t: Task, childCount = 0) => {
-    const name = t.title.trim()
-    const hasContent = name || (t.description || '').trim() || childCount > 0
-    if (!hasContent) return true
-    const label = name ? `「${name}」` : 'このタスク'
-    const extra = childCount > 0 ? `\n子タスク ${childCount} 件も一緒に削除されます。` : ''
-    return window.confirm(`${label}を削除しますか？${extra}`)
+  // 削除の確認。親タスクでは「今日は実施しない」（翌日以降へ引き継ぐ）も選べるようにする。
+  // 引き継ぎは直近の日報に残っているタスクを辿る作りのため、完全に削除するとその場で鎖が切れる。
+  const [pendingRemove, setPendingRemove] = useState<{ task: Task; childCount: number; isParent: boolean } | null>(null)
+
+  const requestRemove = (t: Task, childCount = 0, isParent = false) => {
+    const hasContent = t.title.trim() || (t.description || '').trim() || childCount > 0
+    if (!hasContent) { removeTask(t.id); return }
+    setPendingRemove({ task: t, childCount, isParent })
+  }
+
+  const omitPendingTask = () => {
+    if (!pendingRemove) return
+    updateTask(pendingRemove.task.id, 'is_skipped_today', true)
+    setPendingRemove(null)
+  }
+
+  const deletePendingTask = () => {
+    if (!pendingRemove) return
+    removeTask(pendingRemove.task.id)
+    setPendingRemove(null)
   }
 
   return (
     <>
+      <AlertDialog open={!!pendingRemove} onOpenChange={open => { if (!open) setPendingRemove(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingRemove?.task.title.trim() ? `「${pendingRemove.task.title.trim()}」をどうしますか？` : 'このタスクをどうしますか？'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRemove?.isParent
+                ? '今日は実施しない場合は、タスクを残したままこの日の日報から外せます。完全に削除すると翌日以降の日報にも出てこなくなります。'
+                : 'この子タスクを削除します。'}
+              {pendingRemove && pendingRemove.childCount > 0 && `（子タスク ${pendingRemove.childCount} 件も一緒に扱われます）`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-col-reverse sm:items-stretch sm:justify-start sm:gap-2">
+            <AlertDialogCancel className="sm:mt-0">キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deletePendingTask}
+              className="bg-white text-red-600 border border-red-300 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />完全に削除する
+            </AlertDialogAction>
+            {pendingRemove?.isParent && (
+              <Button onClick={omitPendingTask}>
+                <CalendarOff className="h-4 w-4 mr-1" />今日は実施しない（明日以降も残す）
+              </Button>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {tasks.some(t => t.is_recurring && !t.parent_id) && (
         <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
           <Repeat className="h-3.5 w-3.5 flex-shrink-0" />
@@ -105,7 +150,16 @@ export function TaskListEditor({
         const locked = isDueDateLocked?.(task) ?? false
         const isExistingNonDraft = !!task.approval.existing_id && task.approval.existing_status !== 'draft'
         return (
-          <div key={task.id} className={`rounded-lg border-2 p-4 space-y-3 shadow-sm ${task.is_recurring ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-300 bg-white'}`}>
+          <div key={task.id} className={`rounded-lg border-2 p-4 space-y-3 shadow-sm ${task.is_skipped_today ? 'border-dashed border-slate-300 bg-slate-50 opacity-70' : task.is_recurring ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-300 bg-white'}`}>
+            {task.is_skipped_today && (
+              <div className="-mx-4 -mt-4 flex items-center gap-2 rounded-t-md border-b border-slate-200 bg-slate-100 px-4 py-2 text-xs text-slate-600">
+                <CalendarOff className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="flex-1">この日の日報には載せません。タスクは残るので、翌日以降の日報作成時にまた出てきます。</span>
+                <Button variant="outline" size="sm" className="h-7" onClick={() => updateTask(task.id, 'is_skipped_today', false)}>
+                  <Undo2 className="h-3 w-3 mr-1" />戻す
+                </Button>
+              </div>
+            )}
             {/* タスクごとの境目が分かるよう、見出し行を帯にする */}
             <div className={`-mx-4 -mt-4 mb-1 flex items-center gap-2 rounded-t-md border-b px-4 py-2 ${task.is_recurring ? 'border-emerald-200 bg-emerald-100/60' : 'border-slate-200 bg-slate-100'}`}>
               <GripVertical className="h-4 w-4 text-gray-400" />
@@ -117,7 +171,7 @@ export function TaskListEditor({
               )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={() => addTask(task.id)}><Plus className="h-3 w-3 mr-1" />子タスク</Button>
-              <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { if (confirmRemove(task, children.length)) removeTask(task.id) }}><Trash2 className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="sm" className="text-red-500" onClick={() => requestRemove(task, children.length, true)}><Trash2 className="h-3 w-3" /></Button>
             </div>
             <div>
               <Label className="text-xs">タスク名（親）<HelpTip text="この日報で対応した業務内容" /></Label>
@@ -232,6 +286,10 @@ export function TaskListEditor({
             {/* 省略 / 定期タスク フラグ */}
             <div className="flex items-center gap-4 flex-wrap">
               <label className="flex items-center gap-1 text-sm">
+                <input type="checkbox" checked={!!task.is_skipped_today} onChange={e => updateTask(task.id, 'is_skipped_today', e.target.checked)} />
+                今日は実施しない<HelpTip text="この日の日報には載せませんが、タスクは残るので翌日以降の日報作成時にまた出てきます" />
+              </label>
+              <label className="flex items-center gap-1 text-sm">
                 <input type="checkbox" checked={!!task.is_omitted} onChange={e => updateTask(task.id, 'is_omitted', e.target.checked)} />
                 省略
               </label>
@@ -328,7 +386,7 @@ export function TaskListEditor({
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">子タスク {j + 1}</span>
                   <div className="flex-1" />
-                  <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => { if (confirmRemove(child)) removeTask(child.id) }}><Trash2 className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="sm" className="text-red-500 h-6" onClick={() => requestRemove(child, 0, false)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
                 <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
