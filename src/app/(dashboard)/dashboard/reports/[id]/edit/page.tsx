@@ -15,9 +15,10 @@ import { ArrowLeft, Plus, Trash2, Save, Send, Loader2, X, CalendarClock } from '
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { type Task, type TaskApproval, type DeadlineExtension, type PlannedTask, defaultApproval } from '@/types/report'
-import { TaskListEditor } from '@/components/reports/TaskListEditor'
+import { TaskListEditor, HelpTip } from '@/components/reports/TaskListEditor'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
+import { ReportBasicInfo } from '@/components/reports/ReportBasicInfo'
 
 const EXTENSION_STATUS_MAP: Record<string, { label: string; className: string }> = {
   pending: { label: '申請中', className: 'bg-orange-50 text-orange-700' },
@@ -39,10 +40,14 @@ export default function EditReportPage() {
   const [endTime, setEndTime] = useState('')
   // 全体進捗率は親タスクの進捗率の平均から自動計算する（手動入力廃止）
   const [nextDayPlan, setNextDayPlan] = useState('')
-  const [workLocation, setWorkLocation] = useState('')
-  const [condition, setCondition] = useState('')
-  const [summary, setSummary] = useState('')
-  const [issues, setIssues] = useState('')
+  const [areas, setAreas] = useState<{ id: string; name: string }[]>([])
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([])
+  const [areaId, setAreaId] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [userName, setUserName] = useState('')
+  const [reviewerName, setReviewerName] = useState<string | null>(null)
+  // 作成ページと同じ2画面構成にする
+  const [activeTab, setActiveTab] = useState<'today' | 'tomorrow'>('today')
   const [tasks, setTasks] = useState<Task[]>([])
   const [originalStatus, setOriginalStatus] = useState('')
   const isSubmittedReport = originalStatus === 'submitted'
@@ -90,10 +95,31 @@ export default function EditReportPage() {
 
     const { data: profile } = await supabase
       .from('users')
-      .select('organization_id, department_id')
+      .select('organization_id, department_id, office_id, name, report_reviewer_id')
       .eq('id', user.id)
       .single()
     if (profile) {
+      const p = profile as {
+        organization_id: string
+        department_id: string | null
+        office_id: string | null
+        name: string | null
+        report_reviewer_id: string | null
+      }
+      setUserName(p.name || '')
+      if (p.office_id) setAreaId(p.office_id)
+      if (p.department_id) setDepartmentId(p.department_id)
+      if (p.report_reviewer_id) {
+        const reviewer = (json.data || []).find((m: { id: string }) => m.id === p.report_reviewer_id)
+        if (reviewer) setReviewerName(reviewer.name)
+      }
+      const [{ data: offs }, { data: depts }] = await Promise.all([
+        supabase.from('offices').select('id, name').eq('organization_id', p.organization_id).eq('is_active', true).order('name'),
+        supabase.from('departments').select('id, name').eq('organization_id', p.organization_id).eq('is_active', true).order('order_index'),
+      ])
+      setAreas(offs || [])
+      setDepartments(depts || [])
+
       const { data: rules } = await supabase
         .from('approval_threshold_rules')
         .select('*')
@@ -142,10 +168,6 @@ export default function EditReportPage() {
       setStartTime(report.start_time ? String(report.start_time).slice(0, 5) : '')
       setEndTime(report.end_time ? String(report.end_time).slice(0, 5) : '')
       setNextDayPlan(report.next_day_plan || '')
-      setWorkLocation(report.work_location || '')
-      setCondition(report.condition || '')
-      setSummary(report.summary || '')
-      setIssues(report.issues || '')
       setOriginalStatus(report.status || 'draft')
 
       // Fetch approval requests linked to tasks
@@ -561,13 +583,13 @@ export default function EditReportPage() {
         })))
 
       // Update report
-      // 注意: work_location / condition / summary / issues / tomorrow_plan は
-      // reports テーブルに存在しないカラムのため UPDATE 対象に含めない
-      // （UI 側の編集状態としてのみ保持。永続化が必要であれば schema 追加要）
+      // 勤務場所・体調・業務サマリーの入力欄は廃止した（保存されないまま入力を失わせていたため）。
+      // reports の work_location / condition / summary / issues 列は残っているが、どの画面からも書き込まない。
       const { error: reportError } = await supabase
         .from('reports')
         .update({
           report_date: reportDate,
+          department_id: departmentId || null,
           title: title || null,
           work_hours: workHours ? parseFloat(workHours) : null,
           start_time: startTime || null,
@@ -935,82 +957,33 @@ export default function EditReportPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>基本情報</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>日付</Label>
-              <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>タイトル（任意）</Label>
-              <Input placeholder="例: A社商談・資料作成" value={title} onChange={e => setTitle(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label>開始時間</Label>
-              <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
-              <div className="flex flex-wrap gap-1">
-                {['09:00', '10:00', '11:00', '12:00', '13:00'].map(t => (
-                  <button key={t} type="button" onClick={() => setStartTime(t)}
-                    className="rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground">
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>終了時間</Label>
-              <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>稼働時間 <span className="text-red-500">(*)</span></Label>
-              <Input type="number" step="0.5" placeholder="8.0" value={workHours} onChange={e => setWorkHours(e.target.value)} />
-              <p className="text-xs text-muted-foreground">開始・終了時間を入れると自動計算されます</p>
-            </div>
-            <div className="space-y-2">
-              <Label>全体進捗率（%）</Label>
-              <div className="flex items-center gap-3 h-9 px-3 rounded-md border bg-muted/30">
-                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      computedProgressRate >= 80 ? 'bg-green-500' : computedProgressRate >= 50 ? 'bg-yellow-500' : 'bg-blue-400'
-                    }`}
-                    style={{ width: `${computedProgressRate}%` }}
-                  />
-                </div>
-                <span className="text-sm font-semibold tabular-nums min-w-[3rem] text-right">{computedProgressRate}%</span>
-              </div>
-              <p className="text-xs text-muted-foreground">親タスクの進捗率の平均から自動計算</p>
-            </div>
-            <div className="space-y-2">
-              <Label>勤務場所</Label>
-              <Select value={workLocation} onValueChange={setWorkLocation}>
-                <SelectTrigger><SelectValue placeholder="選択..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="office">オフィス</SelectItem>
-                  <SelectItem value="remote">リモート</SelectItem>
-                  <SelectItem value="client">客先</SelectItem>
-                  <SelectItem value="other">その他</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>体調</Label>
-            <Select value={condition} onValueChange={setCondition}>
-              <SelectTrigger><SelectValue placeholder="選択..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="good">良好</SelectItem>
-                <SelectItem value="normal">普通</SelectItem>
-                <SelectItem value="poor">不調</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      {/* タブ切替（作成ページと同じ構成） */}
+      <div className="flex border-b">
+        <button
+          type="button"
+          onClick={() => setActiveTab('today')}
+          className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${activeTab === 'today' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >① 本日の業務</button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('tomorrow')}
+          className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${activeTab === 'tomorrow' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >② 翌日以降の予定</button>
+      </div>
+
+      {activeTab === 'today' && (
+      <>
+      <ReportBasicInfo
+        areas={areas} areaId={areaId} setAreaId={setAreaId}
+        departments={departments} departmentId={departmentId} setDepartmentId={setDepartmentId}
+        userName={userName} reviewerName={reviewerName}
+        reportDate={reportDate} setReportDate={setReportDate}
+        title={title} setTitle={setTitle}
+        startTime={startTime} setStartTime={setStartTime}
+        endTime={endTime} setEndTime={setEndTime}
+        workHours={workHours} setWorkHours={setWorkHours}
+        computedProgressRate={computedProgressRate}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -1043,21 +1016,15 @@ export default function EditReportPage() {
         </CardContent>
       </Card>
 
+      </>
+      )}
+
+      {activeTab === 'tomorrow' && (
       <Card>
-        <CardHeader><CardTitle>業務サマリー</CardTitle></CardHeader>
+        <CardHeader><CardTitle>翌日以降の予定<HelpTip text="明日以降に予定している業務・引き継ぎタスク" /></CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>本日の成果・概要</Label>
-            <Textarea placeholder="本日の業務の概要を入力..." value={summary} onChange={e => setSummary(e.target.value)} rows={3} />
-          </div>
-          <div className="space-y-2">
-            <Label>課題・問題点</Label>
-            <Textarea placeholder="現在の課題や問題点があれば入力..." value={issues} onChange={e => setIssues(e.target.value)} rows={3} />
-          </div>
-          <div className="space-y-2">
-            <Label>翌日の予定</Label>
-            <div className="space-y-2 ml-1">
-              {plannedTasks.map((pt) => (
+            {plannedTasks.map((pt) => (
                 <div key={pt.id} className="flex items-center gap-2">
                   <Input
                     placeholder="タスク名"
@@ -1091,12 +1058,12 @@ export default function EditReportPage() {
                 </Button>
                 <PlannedTaskCarryOverMenu plannedTasks={plannedTasks} setPlannedTasks={setPlannedTasks} />
               </div>
-            </div>
             <Label className="text-sm text-muted-foreground">メモ（任意）</Label>
             <Textarea placeholder="翌日の予定を入力..." value={nextDayPlan} onChange={e => setNextDayPlan(e.target.value)} rows={3} />
           </div>
         </CardContent>
       </Card>
+      )}
 
       {isSubmittedReport && (
         <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
