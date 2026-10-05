@@ -6,7 +6,7 @@ import { filterCurrentOverdue } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Plus } from 'lucide-react'
 
 interface OverdueRow {
   id: string
@@ -105,6 +105,19 @@ export default function OverdueTasksPage() {
           </h1>
           <p className="text-muted-foreground">期日を過ぎた未完了のタスクを一覧表示します。同じタスクは最新の日報の状態で判定します</p>
         </div>
+        <Button asChild size="sm">
+          <a href="/dashboard/reports/new"><Plus className="mr-1 h-4 w-4" />日報を作成して取り込む</a>
+        </Button>
+      </div>
+
+      {/* 一覧を見た人が次に何をすればよいか分からない、という指摘への案内 */}
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 space-y-1">
+        <p className="font-semibold">期日遅れのタスクへの対処</p>
+        <ul className="list-disc pl-5 space-y-0.5">
+          <li><span className="font-medium">まだ対応が必要なもの</span> — 日報作成画面の「タスク引き継ぎ」から今日の日報に取り込み、新しい期日を入れてください。</li>
+          <li><span className="font-medium">すでに終わっているもの</span> — 「表示」から該当の日報を開き、進捗を100%（またはステータスを「完了」）にすると、この一覧から消えます。</li>
+          <li><span className="font-medium">今日は手を付けないもの</span> — 取り込んだうえで、タスクの削除ボタンから「今日は実施しない」を選べば、日報に載せずに翌日へ持ち越せます。</li>
+        </ul>
       </div>
 
       <Card>
