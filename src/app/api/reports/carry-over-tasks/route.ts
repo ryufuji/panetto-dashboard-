@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { isTaskClosed } from '@/types/report'
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
       if (tasksError) throw tasksError
 
       const parentTasks = (tasks || [])
-        .filter(t => !t.parent_task_id && t.progress_rate < 100)
+        .filter(t => !t.parent_task_id && t.progress_rate < 100 && !isTaskClosed(t.task_status))
 
       const result = parentTasks.map(pt => ({
         ...pt,
@@ -106,10 +107,11 @@ export async function GET(request: NextRequest) {
 
     // Filter by mode
     const today = new Date().toISOString().split('T')[0]
+    // 「取りやめ」にしたタスクは、もう追わないと決めたものなので引き継ぎ候補に出さない
     const filtered = mode === 'incomplete_all'
-      ? uniqueParentTasks.filter(t => t.progress_rate < 100)
+      ? uniqueParentTasks.filter(t => t.progress_rate < 100 && !isTaskClosed(t.task_status))
       : mode === 'overdue'
-        ? uniqueParentTasks.filter(t => t.progress_rate < 100 && t.due_date && t.due_date < today)
+        ? uniqueParentTasks.filter(t => t.progress_rate < 100 && !isTaskClosed(t.task_status) && t.due_date && t.due_date < today)
         : uniqueParentTasks.filter(t => t.progress_rate >= 100)
 
     // Attach children and report_date

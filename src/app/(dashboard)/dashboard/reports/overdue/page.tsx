@@ -1,13 +1,23 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { fetchOverdueTasks, STALE_DAYS, type OverdueScope, type OverdueTask } from '@/lib/overdue-tasks'
+import { CANCELLED_TASK_STATUS, isTaskClosed } from '@/types/report'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
 import { OverdueGuidance } from '@/components/reports/OverdueGuidance'
+
+/** .in() に渡すIDの数。UUID を並べすぎると URL が長くなりリクエストが落ちる */
+const UPDATE_CHUNK = 100
 
 export default function OverdueTasksPage() {
   const supabase = createClient()
@@ -16,6 +26,10 @@ export default function OverdueTasksPage() {
   const [scope, setScope] = useState<'mine' | 'org'>('mine')
   const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'in_progress'>('incomplete')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
@@ -23,6 +37,7 @@ export default function OverdueTasksPage() {
     const load = async () => {
       setLoading(true)
       setLoadError(null)
+      setSelectedIds(new Set())
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) throw new Error('ログイン情報を取得できませんでした。再度ログインしてください')
@@ -55,15 +70,53 @@ export default function OverdueTasksPage() {
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope])
+  }, [scope, reloadKey])
 
   const filtered = rows.filter(t => {
     if (statusFilter === 'all') return true
     if (statusFilter === 'in_progress') return t.task_status === '進行中'
-    return t.task_status !== '完了'
+    return !isTaskClosed(t.task_status)
   })
   const overdueCount = filtered.filter(t => t.is_overdue).length
   const staleOnlyCount = filtered.filter(t => !t.is_overdue && t.is_stale).length
+
+  // 一括で片付けられるのは自分のタスクだけ。他の人の日報には手を出さない
+  const canSelect = scope === 'mine'
+  const selectedCount = filtered.filter(t => selectedIds.has(t.id)).length
+  const allSelected = filtered.length > 0 && selectedCount === filtered.length
+
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(filtered.map(t => t.id)))
+  }
+
+  const cancelSelected = async () => {
+    const ids = filtered.filter(t => selectedIds.has(t.id)).map(t => t.id)
+    setCancelling(true)
+    try {
+      for (let i = 0; i < ids.length; i += UPDATE_CHUNK) {
+        const { error } = await supabase
+          .from('report_tasks')
+          .update({ task_status: CANCELLED_TASK_STATUS })
+          .in('id', ids.slice(i, i + UPDATE_CHUNK))
+        if (error) throw error
+      }
+      toast.success(`${ids.length}件を「取りやめ」にしました`)
+      setConfirmCancel(false)
+      setReloadKey(k => k + 1)
+    } catch (e: any) {
+      toast.error(e?.message || '取りやめにできませんでした。時間をおいて試してください')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -105,6 +158,11 @@ export default function OverdueTasksPage() {
                 <SelectItem value="org">組織全体</SelectItem>
               </SelectContent>
             </Select>
+            {canSelect && selectedCount > 0 && (
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setConfirmCancel(true)}>
+                選択した{selectedCount}件を「取りやめ」にする
+              </Button>
+            )}
             <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
               <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -125,9 +183,25 @@ export default function OverdueTasksPage() {
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">期日遅れのタスクはありません</p>
           ) : (
+            <>
+            {canSelect && (
+              <div className="flex items-center gap-2 border-b pb-2 text-xs text-muted-foreground">
+                <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="すべて選択" />
+                <span>すべて選択</span>
+                {selectedCount > 0 && <span className="ml-1">（{selectedCount}件を選択中）</span>}
+              </div>
+            )}
             <ul className="divide-y">
               {filtered.map(t => (
                 <li key={t.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
+                  {canSelect && (
+                    <Checkbox
+                      className="shrink-0"
+                      checked={selectedIds.has(t.id)}
+                      onCheckedChange={() => toggleOne(t.id)}
+                      aria-label={`${t.title} を選択`}
+                    />
+                  )}
                   <span className={`tabular-nums w-24 shrink-0 ${t.is_overdue ? 'text-red-600' : 'text-muted-foreground'}`}>
                     {t.due_date || '期日なし'}
                   </span>
@@ -148,9 +222,31 @@ export default function OverdueTasksPage() {
                 </li>
               ))}
             </ul>
+            </>
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>選択した{selectedCount}件を「取りやめ」にします</AlertDialogTitle>
+            <AlertDialogDescription>
+              もう追わないタスクとして、この一覧から外します。タスクそのものは日報に残り、
+              「完了」とは区別されます。元に戻すには、日報を開いてステータスを戻してください。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); cancelSelected() }}
+              disabled={cancelling}
+            >
+              {cancelling ? '処理中...' : '取りやめにする'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

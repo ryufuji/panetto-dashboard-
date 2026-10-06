@@ -44,7 +44,7 @@ export interface Task {
   purpose?: string                     // 目的・背景
   memo?: string                        // 備考・メモ
   actual_url?: string                  // 進行中・実績URL
-  task_status?: string                 // ステータス: 未着手/進行中/完了/保留
+  task_status?: string                 // ステータス: 未着手/進行中/完了/保留/取りやめ
   target_norma_count?: string          // ノルマ目標 (件数)
   target_norma_amount?: string         // ノルマ目標 (金額)
   today_result_count?: string          // 今日の成果 (件数)
@@ -58,7 +58,14 @@ export interface Task {
   shared_user_ids?: string[]           // 共有ユーザー (参照のみ)
 }
 
-export const TASK_STATUS_OPTIONS = ['未着手', '進行中', '完了', '保留'] as const
+// 「取りやめ」はもう追わないと決めたタスク。完了と区別したうえで期日遅れ一覧から外す
+export const TASK_STATUS_OPTIONS = ['未着手', '進行中', '完了', '保留', '取りやめ'] as const
+export const CANCELLED_TASK_STATUS = '取りやめ'
+
+/** これ以上追わないタスク。引き継ぎ候補にも期日遅れ一覧にも出さない */
+export function isTaskClosed(status?: string | null): boolean {
+  return status === '完了' || status === CANCELLED_TASK_STATUS
+}
 export type TaskStatus = typeof TASK_STATUS_OPTIONS[number]
 
 // 定期タスクの繰り返しパターン

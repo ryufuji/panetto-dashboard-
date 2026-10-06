@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2, Save, Send, X, ClipboardCheck, ChevronDown, Clock, ArrowRight, ArrowLeft, Download, ClipboardList, LayoutTemplate, History, FileText } from 'lucide-react'
 import { toast } from 'sonner'
-import { type Task, type PlannedTask, defaultApproval, recurrenceFires, type RecurrencePattern } from '@/types/report'
+import { type Task, type PlannedTask, defaultApproval, recurrenceFires, type RecurrencePattern, isTaskClosed } from '@/types/report'
 import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -360,7 +360,7 @@ export default function NewReportPage() {
       !t.parent_id &&
       t.title.trim() &&
       (t.progress_rate < 100) &&
-      (t.task_status !== '完了')
+      !isTaskClosed(t.task_status)
     )
     if (incomplete.length === 0) {
       toast.info('未完了の親タスクはありません')
@@ -554,7 +554,7 @@ export default function NewReportPage() {
 
       // 未完了の親タスクのみ対象（定期タスクは autoIngestRecurringTasks が担当するため除外）
       const parentTasks = (allTasks as any[]).filter(
-        t => !t.parent_task_id && (t.progress_rate ?? 0) < 100 && t.task_status !== '完了' && !t.is_recurring
+        t => !t.parent_task_id && (t.progress_rate ?? 0) < 100 && !isTaskClosed(t.task_status) && !t.is_recurring
       )
       if (parentTasks.length === 0) return
 
@@ -1260,7 +1260,7 @@ export default function NewReportPage() {
             const filtered = overdueTasks.filter(t => {
               if (overdueFilter === 'all') return true
               if (overdueFilter === 'in_progress') return t.task_status === '進行中'
-              return t.task_status !== '完了'
+              return !isTaskClosed(t.task_status)
             })
             if (filtered.length === 0) return <p className="text-sm text-muted-foreground">期日遅れのタスクはありません</p>
             return (
