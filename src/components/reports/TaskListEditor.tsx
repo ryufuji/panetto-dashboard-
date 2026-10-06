@@ -146,6 +146,9 @@ export function TaskListEditor({
 
       {parentTasks.map((task, i) => {
         const children = tasks.filter(t => t.parent_id === task.id)
+        // 子タスクの「実績」は親へ自動では合計しない（親自身の作業時間として手入力されている運用があるため）。
+        // 合計したい人のために、値だけ出して1クリックで入れられるようにする
+        const childActualSum = children.reduce((sum, c) => sum + (parseFloat(c.actual_hours) || 0), 0)
         const requiredSteps = getRequiredSteps(task.approval.amount)
         const locked = isDueDateLocked?.(task) ?? false
         const isExistingNonDraft = !!task.approval.existing_id && task.approval.existing_status !== 'draft'
@@ -246,19 +249,28 @@ export function TaskListEditor({
                 </>
               )}
               <div>
-                <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="このタスクに見込んだ時間。子タスクがある場合は子タスクの合計が自動設定されます" /></Label>
+                <Label className="text-xs">工数(h) <span className="text-red-500">(*)</span><HelpTip text="このタスクに見込んだ時間。子タスクがある場合は、子タスクの「工数」の合計が自動で入ります（子タスクの「実績」は合計されません）" /></Label>
                 {children.length > 0 ? (
                   <div className="flex items-center h-9 px-3 rounded-md border bg-muted/30 text-sm gap-1">
                     <span className="font-medium">{children.reduce((sum, c) => sum + (parseFloat(c.estimated_hours) || 0), 0)}</span>
-                    <span className="text-xs text-muted-foreground">h（子タスク合計）</span>
+                    <span className="text-xs text-muted-foreground">h（子タスクの工数合計）</span>
                   </div>
                 ) : (
                   <Input type="number" step="0.5" placeholder="0.5" value={task.estimated_hours} onChange={e => updateTask(task.id, 'estimated_hours', e.target.value)} />
                 )}
               </div>
               <div>
-                <Label className="text-xs">実績(h)<HelpTip text="実際にかかった時間。日報詳細の「実績」に表示されます" /></Label>
+                <Label className="text-xs">実績(h)<HelpTip text="このタスク自体に実際かかった時間。子タスクの「実績」は自動では合計されないので、まとめて入れたい場合は手で入力してください" /></Label>
                 <Input type="number" step="0.5" placeholder="0.5" value={task.actual_hours} onChange={e => updateTask(task.id, 'actual_hours', e.target.value)} />
+                {childActualSum > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => updateTask(task.id, 'actual_hours', String(childActualSum))}
+                    className="mt-1 text-xs text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                  >
+                    子タスクの実績合計 {childActualSum}h を入れる
+                  </button>
+                )}
               </div>
               <div>
                 <Label className="text-xs">優先度<HelpTip text="高：今日必ず完了、中：通常、低：余裕があれば" /></Label>
@@ -391,8 +403,8 @@ export function TaskListEditor({
                 <Input placeholder="タスク名" value={child.title} onChange={e => updateTask(child.id, 'title', e.target.value)} />
                 <Textarea placeholder="詳細（任意）" value={child.description} onChange={e => updateTask(child.id, 'description', e.target.value)} rows={2} />
                 <div className="grid grid-cols-5 gap-2">
-                  <div><Label className="text-xs">工数(h)</Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
-                  <div><Label className="text-xs">実績(h)</Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>
+                  <div><Label className="text-xs">工数(h)<HelpTip text="この子タスクに見込んだ時間。ここに入れた分が親タスクの工数に合計されます" /></Label><Input type="number" step="0.5" value={child.estimated_hours} onChange={e => updateTask(child.id, 'estimated_hours', e.target.value)} /></div>
+                  <div><Label className="text-xs">実績(h)<HelpTip text="この子タスクに実際かかった時間。親タスクへは自動で合計されません" /></Label><Input type="number" step="0.5" value={child.actual_hours} onChange={e => updateTask(child.id, 'actual_hours', e.target.value)} /></div>
                   <div><Label className="text-xs">進捗(%)</Label><Input type="number" min="0" max="100" placeholder="0" value={child.progress_rate || ''} onChange={e => updateTask(child.id, 'progress_rate', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)} /></div>
                   <div><Label className="text-xs">開始日</Label><Input type="date" value={child.start_date} onChange={e => updateTask(child.id, 'start_date', e.target.value)} /></div>
                   <div><Label className="text-xs">期限</Label><Input type="date" value={child.due_date} onChange={e => updateTask(child.id, 'due_date', e.target.value)} /></div>
