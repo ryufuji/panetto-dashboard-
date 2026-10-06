@@ -6,7 +6,7 @@ import { TaskListEditor, HelpTip } from '@/components/reports/TaskListEditor'
 import { ReportBasicInfo } from '@/components/reports/ReportBasicInfo'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { fetchOverdueCandidates, filterCurrentOverdue, type OverdueScope } from '@/lib/overdue-tasks'
+import { fetchOverdueTasks, type OverdueScope } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -191,8 +191,8 @@ export default function NewReportPage() {
       // 後日の日報で完了にしたタスクの古い行は除外（期日遅れ一覧ページと同じ判定）
       const target: OverdueScope = { kind: 'user', userId: user.id }
       try {
-        const candidates = await fetchOverdueCandidates(supabase, target, today, 200)
-        const current = await filterCurrentOverdue(supabase, candidates, target)
+        // 取り込み候補は期日を過ぎたものだけに保つ（進捗が止まっているだけのものは出さない）
+        const current = await fetchOverdueTasks(supabase, target, today, false)
         if (!cancelled) setOverdueTasks(current as any)
       } catch {
         if (!cancelled) setOverdueTasks([])

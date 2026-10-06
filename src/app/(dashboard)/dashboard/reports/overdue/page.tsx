@@ -2,23 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { fetchOverdueCandidates, filterCurrentOverdue, type OverdueCandidate, type OverdueScope } from '@/lib/overdue-tasks'
+import { fetchOverdueTasks, STALE_DAYS, type OverdueScope, type OverdueTask } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
 import { OverdueGuidance } from '@/components/reports/OverdueGuidance'
 
-/**
- * 期日超過の行は組織全体で2,000件近くあり、PostgREST は1リクエストで1000行までしか返さない。
- * ここで取れるのは期日の古い順の一部で、直近の期日超過は取りこぼす。
- */
-const CANDIDATE_LIMIT = 1000
-
 export default function OverdueTasksPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<OverdueCandidate[]>([])
+  const [rows, setRows] = useState<OverdueTask[]>([])
   const [scope, setScope] = useState<'mine' | 'org'>('mine')
   const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'in_progress'>('incomplete')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -44,10 +38,11 @@ export default function OverdueTasksPage() {
           ? { kind: 'user', userId: user.id }
           : { kind: 'org', organizationId: (profile as any).organization_id }
 
-        const candidates = await fetchOverdueCandidates(supabase, target, today, CANDIDATE_LIMIT)
-        const current = await filterCurrentOverdue(supabase, candidates, target)
+        // 進捗が止まっているタスクは本人の画面にだけ出す。
+        // 組織全体の一覧は、管理側から見える件数が増えないよう期日超過のみに保つ。
+        const rows = await fetchOverdueTasks(supabase, target, today, scope === 'mine')
 
-        if (!cancelled) setRows(current)
+        if (!cancelled) setRows(rows)
       } catch (e: any) {
         if (!cancelled) {
           setRows([])
@@ -67,6 +62,8 @@ export default function OverdueTasksPage() {
     if (statusFilter === 'in_progress') return t.task_status === '進行中'
     return t.task_status !== '完了'
   })
+  const overdueCount = filtered.filter(t => t.is_overdue).length
+  const staleOnlyCount = filtered.filter(t => !t.is_overdue && t.is_stale).length
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -75,18 +72,31 @@ export default function OverdueTasksPage() {
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <AlertTriangle className="h-7 w-7 text-red-500" />期日遅れタスク
           </h1>
-          <p className="text-muted-foreground">期日を過ぎた未完了のタスクを一覧表示します。同じタスクは最新の日報の状態で判定します</p>
+          <p className="text-muted-foreground">
+            {scope === 'mine'
+              ? `期日を過ぎた未完了のタスクと、${STALE_DAYS}日以上進捗が動いていないタスクを一覧表示します。同じタスクは最新の日報の状態で判定します`
+              : '期日を過ぎた未完了のタスクを一覧表示します。同じタスクは最新の日報の状態で判定します'}
+          </p>
         </div>
         <Button asChild size="sm">
           <a href="/dashboard/reports/new"><Plus className="mr-1 h-4 w-4" />日報を作成して取り込む</a>
         </Button>
       </div>
 
-      <OverdueGuidance />
+      <OverdueGuidance showStale={scope === 'mine'} staleDays={STALE_DAYS} />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle className="text-base">フィルター</CardTitle>
+          <CardTitle className="text-base">
+            フィルター
+            {!loading && !loadError && filtered.length > 0 && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {overdueCount > 0 && `期日超過 ${overdueCount}件`}
+                {overdueCount > 0 && staleOnlyCount > 0 && ' / '}
+                {staleOnlyCount > 0 && `進捗が止まっている ${staleOnlyCount}件`}
+              </span>
+            )}
+          </CardTitle>
           <div className="flex items-center gap-2">
             <Select value={scope} onValueChange={(v: any) => setScope(v)}>
               <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
@@ -118,8 +128,15 @@ export default function OverdueTasksPage() {
             <ul className="divide-y">
               {filtered.map(t => (
                 <li key={t.id} className="flex items-center justify-between py-2 text-sm gap-2">
-                  <span className="text-red-600 tabular-nums w-24">{t.due_date}</span>
+                  <span className={`tabular-nums w-24 shrink-0 ${t.is_overdue ? 'text-red-600' : 'text-muted-foreground'}`}>
+                    {t.due_date || '期日なし'}
+                  </span>
                   <span className="flex-1 truncate">{t.title}</span>
+                  {!t.is_overdue && t.is_stale && (
+                    <span className="shrink-0 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-900">
+                      {t.stale_days}日 進捗なし
+                    </span>
+                  )}
                   {scope === 'org' && t.user_name && (
                     <span className="text-xs text-muted-foreground w-24 truncate text-right">{t.user_name}</span>
                   )}
