@@ -127,22 +127,22 @@ export default function OverdueTasksPage() {
           ) : (
             <ul className="divide-y">
               {filtered.map(t => (
-                <li key={t.id} className="flex items-center justify-between py-2 text-sm gap-2">
+                <li key={t.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
                   <span className={`tabular-nums w-24 shrink-0 ${t.is_overdue ? 'text-red-600' : 'text-muted-foreground'}`}>
                     {t.due_date || '期日なし'}
                   </span>
-                  <span className="flex-1 truncate">{t.title}</span>
-                  {!t.is_overdue && t.is_stale && (
+                  <span className="order-1 w-full min-w-0 truncate sm:order-none sm:w-auto sm:flex-1">{t.title}</span>
+                  {scope === 'mine' && t.is_stale && (
                     <span className="shrink-0 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-900">
                       {t.stale_days}日 進捗なし
                     </span>
                   )}
                   {scope === 'org' && t.user_name && (
-                    <span className="text-xs text-muted-foreground w-24 truncate text-right">{t.user_name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground w-24 truncate text-right">{t.user_name}</span>
                   )}
-                  <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">{t.progress_rate}%</span>
-                  {t.task_status && <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">{t.task_status}</span>}
-                  <Button asChild variant="link" size="sm" className="h-6 px-1 text-xs">
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums w-12 text-right">{t.progress_rate}%</span>
+                  {t.task_status && <span className="shrink-0 text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">{t.task_status}</span>}
+                  <Button asChild variant="link" size="sm" className="h-6 px-1 text-xs shrink-0 ml-auto sm:ml-0">
                     <a href={`/dashboard/reports/${t.report_id}`}>表示</a>
                   </Button>
                 </li>
