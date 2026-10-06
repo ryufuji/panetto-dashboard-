@@ -2,88 +2,59 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { filterCurrentOverdue } from '@/lib/overdue-tasks'
+import { fetchOverdueCandidates, filterCurrentOverdue, type OverdueCandidate, type OverdueScope } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
 import { OverdueGuidance } from '@/components/reports/OverdueGuidance'
 
-interface OverdueRow {
-  id: string
-  title: string
-  due_date: string
-  progress_rate: number
-  task_status: string | null
-  report_id: string
-  report_date: string
-  user_name?: string
-}
+/**
+ * 期日超過の行は組織全体で2,000件近くあり、PostgREST は1リクエストで1000行までしか返さない。
+ * ここで取れるのは期日の古い順の一部で、直近の期日超過は取りこぼす。
+ */
+const CANDIDATE_LIMIT = 1000
 
 export default function OverdueTasksPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<OverdueRow[]>([])
+  const [rows, setRows] = useState<OverdueCandidate[]>([])
   const [scope, setScope] = useState<'mine' | 'org'>('mine')
   const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'in_progress'>('incomplete')
+  const [loadError, setLoadError] = useState<string | null>(null)
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      setLoadError(null)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('ログイン情報を取得できませんでした。再度ログインしてください')
 
-      const { data: profile } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single()
-      if (!profile) return
+        const { data: profile } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('id', user.id)
+          .single()
+        if (!profile) throw new Error('ユーザー情報を取得できませんでした。管理者にお問い合わせください')
 
-      let reportsQuery = supabase
-        .from('reports')
-        .select('id, report_date, user_id, user:users(name)')
-        .in('status', ['submitted', 'approved'])
+        const target: OverdueScope = scope === 'mine'
+          ? { kind: 'user', userId: user.id }
+          : { kind: 'org', organizationId: (profile as any).organization_id }
 
-      if (scope === 'mine') {
-        reportsQuery = reportsQuery.eq('user_id', user.id)
-      } else {
-        reportsQuery = reportsQuery.eq('organization_id', (profile as any).organization_id)
-      }
+        const candidates = await fetchOverdueCandidates(supabase, target, today, CANDIDATE_LIMIT)
+        const current = await filterCurrentOverdue(supabase, candidates, target)
 
-      const { data: reports } = await reportsQuery
-      if (!reports || reports.length === 0) {
-        if (!cancelled) { setRows([]); setLoading(false) }
-        return
-      }
-
-      const reportIds = reports.map((r: any) => r.id)
-      const dateMap = new Map(reports.map((r: any) => [r.id, r.report_date]))
-      const userMap = new Map(reports.map((r: any) => [r.id, r.user?.name || '']))
-      const userIdMap = new Map(reports.map((r: any) => [r.id, r.user_id]))
-
-      const { data: tasks } = await supabase
-        .from('report_tasks')
-        .select('id, title, due_date, progress_rate, task_status, report_id')
-        .in('report_id', reportIds)
-        .lt('due_date', today)
-        .lt('progress_rate', 100)
-        .order('due_date', { ascending: true })
-        .limit(200)
-
-      const current = await filterCurrentOverdue(supabase, tasks || [], reportIds, dateMap, userIdMap)
-
-      if (!cancelled) {
-        const enriched = current
-          .map((t: any) => ({
-            ...t,
-            report_date: dateMap.get(t.report_id) || '',
-            user_name: userMap.get(t.report_id) || '',
-          }))
-        setRows(enriched)
-        setLoading(false)
+        if (!cancelled) setRows(current)
+      } catch (e: any) {
+        if (!cancelled) {
+          setRows([])
+          setLoadError(e?.message || '期日遅れタスクを取得できませんでした。時間をおいて再読み込みしてください')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
     load()
@@ -139,6 +110,8 @@ export default function OverdueTasksPage() {
             <div className="py-12 flex items-center justify-center text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin mr-2" />読み込み中...
             </div>
+          ) : loadError ? (
+            <p className="text-sm text-red-600 py-8 text-center">{loadError}</p>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">期日遅れのタスクはありません</p>
           ) : (

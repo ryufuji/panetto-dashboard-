@@ -6,7 +6,7 @@ import { TaskListEditor, HelpTip } from '@/components/reports/TaskListEditor'
 import { ReportBasicInfo } from '@/components/reports/ReportBasicInfo'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { filterCurrentOverdue } from '@/lib/overdue-tasks'
+import { fetchOverdueCandidates, filterCurrentOverdue, type OverdueScope } from '@/lib/overdue-tasks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -188,34 +188,14 @@ export default function NewReportPage() {
       if (!cancelled) setSubmittedHistory((hist || []) as any)
 
       // 期日遅れタスク（自分のレポート、due_date < today、進捗 < 100）
-      const { data: myReports } = await supabase
-        .from('reports')
-        .select('id, report_date')
-        .eq('user_id', user.id)
-        .in('status', ['submitted', 'approved'])
-      const reportIds = (myReports || []).map((r: any) => r.id)
-      if (reportIds.length === 0) {
+      // 後日の日報で完了にしたタスクの古い行は除外（期日遅れ一覧ページと同じ判定）
+      const target: OverdueScope = { kind: 'user', userId: user.id }
+      try {
+        const candidates = await fetchOverdueCandidates(supabase, target, today, 200)
+        const current = await filterCurrentOverdue(supabase, candidates, target)
+        if (!cancelled) setOverdueTasks(current as any)
+      } catch {
         if (!cancelled) setOverdueTasks([])
-        return
-      }
-      const dateMap = new Map((myReports || []).map((r: any) => [r.id, r.report_date]))
-      const { data: od } = await supabase
-        .from('report_tasks')
-        .select('id, title, due_date, progress_rate, task_status, report_id')
-        .in('report_id', reportIds)
-        .lt('due_date', today)
-        .lt('progress_rate', 100)
-        .order('due_date', { ascending: true })
-        .limit(50)
-      // 後日の日報で完了にしたタスクの古い行を除外（期日遅れ一覧ページと同じ判定）
-      const userIdMap = new Map((myReports || []).map((r: any) => [r.id, user.id]))
-      const current = await filterCurrentOverdue(supabase, (od || []) as any[], reportIds, dateMap, userIdMap)
-      if (!cancelled) {
-        const enriched = current.map((t: any) => ({
-          ...t,
-          report_date: dateMap.get(t.report_id) || '',
-        }))
-        setOverdueTasks(enriched as any)
       }
     }
     load()
