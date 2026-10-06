@@ -209,9 +209,9 @@ export default function NewReportPage() {
         .limit(50)
       // 後日の日報で完了にしたタスクの古い行を除外（期日遅れ一覧ページと同じ判定）
       const userIdMap = new Map((myReports || []).map((r: any) => [r.id, user.id]))
-      const current = await filterCurrentOverdue(supabase, od || [], reportIds, dateMap, userIdMap, today)
+      const current = await filterCurrentOverdue(supabase, (od || []) as any[], reportIds, dateMap, userIdMap)
       if (!cancelled) {
-        const enriched = current.map(({ task: t }) => ({
+        const enriched = current.map((t: any) => ({
           ...t,
           report_date: dateMap.get(t.report_id) || '',
         }))

@@ -1,63 +1,27 @@
-// 期日遅れタスクの判定 filterCurrentOverdue の検証。実行: npx tsx scripts/test-overdue-filter.ts
-//
-// 判定の意図:
-//   - 同じ人・同じタスク名は最新の日報の行で判定する
-//   - 完了したもの、定期タスクは出さない
-//   - 毎日引き継いで進捗が動いているものは「対応中」なので出さない
-//   - 期日を過ぎたもの、または7日以上進捗が動いていないものを出す
-import { filterCurrentOverdue, STALE_DAYS } from '../src/lib/overdue-tasks'
+// 期日遅れタスクの「現在も未完了か」判定（src/lib/overdue-tasks.ts）の検証。実行: npx tsx scripts/test-overdue-filter.ts
+import { filterCurrentOverdue, type OverdueCandidate } from '../src/lib/overdue-tasks'
 
+// report_tasks の全行（同名タスクが複数日報にまたがる状況を再現）
+const allRows: OverdueCandidate[] = [
+  // A: 9/1 で 0% → 9/5 で 100%/完了 → 期日遅れから消えるべき
+  { id: 'a1', title: '【熊本】チケット', due_date: '2026-09-01', progress_rate: 0,   task_status: '進行中', report_id: 'r0901' },
+  { id: 'a2', title: '【熊本】チケット', due_date: '2026-09-01', progress_rate: 100, task_status: '完了',   report_id: 'r0905' },
+  // B: 9/1 で 30% → 9/5 で 60%（まだ未完了）→ 最新行 b2 だけ残るべき
+  { id: 'b1', title: 'バナー変更', due_date: '2026-09-03', progress_rate: 30, task_status: '進行中', report_id: 'r0901' },
+  { id: 'b2', title: 'バナー変更', due_date: '2026-09-03', progress_rate: 60, task_status: '進行中', report_id: 'r0905' },
+  // C: 9/1 で期日超過 → 9/5 で期日を延長（due 9/30、候補外）→ 古い行 c1 は消えるべき
+  { id: 'c1', title: 'OHP関連', due_date: '2026-09-02', progress_rate: 40, task_status: '進行中', report_id: 'r0901' },
+  { id: 'c2', title: 'OHP関連', due_date: '2026-09-30', progress_rate: 40, task_status: '進行中', report_id: 'r0905' },
+  // D: 1回しか出ていない未完了 → 残るべき
+  { id: 'd1', title: '面談シート', due_date: '2026-09-04', progress_rate: 80, task_status: '進行中', report_id: 'r0905' },
+  // E: 別のユーザーの同名タスク（完了）は自分の判定に影響しない
+  { id: 'e1', title: 'バナー変更', due_date: '2026-09-03', progress_rate: 100, task_status: '完了', report_id: 'r0905-other' },
+]
 const today = '2026-09-10'
-
-type Row = {
-  id: string
-  title: string
-  due_date: string | null
-  progress_rate: number
-  task_status: string | null
-  report_id: string
-  is_recurring?: boolean
-}
-
-// report_id → 日付 / 担当者
-const reports: [string, string, string][] = [
-  ['r0901', '2026-09-01', 'me'],
-  ['r0903', '2026-09-03', 'me'],
-  ['r0905', '2026-09-05', 'me'],
-  ['r0909', '2026-09-09', 'me'],
-  ['r0909-other', '2026-09-09', 'someone-else'],
-]
-const dateMap = new Map(reports.map(([id, d]) => [id, d]))
-const userMap = new Map(reports.map(([id, , u]) => [id, u]))
-const reportIds = reports.map(([id]) => id)
-
-const allRows: Row[] = [
-  // A: 期日超過のまま進捗が動いていない（9/1 から 0% のまま）→ 出る
-  { id: 'a1', title: 'A 放置', due_date: '2026-09-02', progress_rate: 0, task_status: '未着手', report_id: 'r0901' },
-  { id: 'a2', title: 'A 放置', due_date: '2026-09-02', progress_rate: 0, task_status: '未着手', report_id: 'r0909' },
-
-  // B: 毎日引き継いで進捗が動いている → 出ない（対応中）
-  { id: 'b1', title: 'B 進行中', due_date: '2026-09-02', progress_rate: 10, task_status: '進行中', report_id: 'r0901' },
-  { id: 'b2', title: 'B 進行中', due_date: '2026-09-02', progress_rate: 60, task_status: '進行中', report_id: 'r0909' },
-
-  // C: 後日completeにした → 出ない
-  { id: 'c1', title: 'C 完了済', due_date: '2026-09-02', progress_rate: 30, task_status: '進行中', report_id: 'r0901' },
-  { id: 'c2', title: 'C 完了済', due_date: '2026-09-02', progress_rate: 100, task_status: '完了', report_id: 'r0909' },
-
-  // D: 定期タスク（期日超過・進捗0）→ 出ない
-  { id: 'd1', title: 'D 定期', due_date: '2026-09-02', progress_rate: 0, task_status: '未着手', report_id: 'r0909', is_recurring: true },
-
-  // E: 期日はまだ先だが 9/1 から進捗が動いていない（9日間）→ 出る（放置）
-  { id: 'e1', title: 'E 期日先だが停滞', due_date: '2026-12-31', progress_rate: 20, task_status: '進行中', report_id: 'r0901' },
-  { id: 'e2', title: 'E 期日先だが停滞', due_date: '2026-12-31', progress_rate: 20, task_status: '進行中', report_id: 'r0909' },
-
-  // F: 期日はまだ先で、最近進捗が動いた → 出ない
-  { id: 'f1', title: 'F 順調', due_date: '2026-12-31', progress_rate: 20, task_status: '進行中', report_id: 'r0905' },
-  { id: 'f2', title: 'F 順調', due_date: '2026-12-31', progress_rate: 50, task_status: '進行中', report_id: 'r0909' },
-
-  // G: 他人の同名タスクが完了していても、自分の分は影響を受けない
-  { id: 'g1', title: 'A 放置', due_date: '2026-09-02', progress_rate: 100, task_status: '完了', report_id: 'r0909-other' },
-]
+const candidates = allRows.filter(t => t.due_date! < today && t.progress_rate < 100)
+const reportIds = ['r0901', 'r0905', 'r0905-other']
+const dateMap = new Map([['r0901', '2026-09-01'], ['r0905', '2026-09-05'], ['r0905-other', '2026-09-05']])
+const userMap = new Map([['r0901', 'me'], ['r0905', 'me'], ['r0905-other', 'someone-else']])
 
 // supabase クライアントの最小モック（.from().select().in().in().is() → { data }）
 const fakeSupabase: any = {
@@ -73,29 +37,20 @@ const fakeSupabase: any = {
 }
 
 async function main() {
-  const candidates = allRows.filter(r => r.progress_rate < 100)
-  const judged = await filterCurrentOverdue(fakeSupabase, candidates, reportIds, dateMap, userMap, today)
-  const got = judged.map(j => j.task.id).sort()
-  const reasonOf = (id: string) => judged.find(j => j.task.id === id)?.reason
-
-  console.log('停滞とみなす日数:', STALE_DAYS)
-  console.log('出たタスク:', judged.map(j => `${j.task.id}(${j.reason}/${j.staleDays}日)`).join(', ') || 'なし')
-
+  const result = await filterCurrentOverdue(fakeSupabase, candidates, reportIds, dateMap, userMap)
+  const got = result.map(t => t.id).sort()
+  const expected = ['b2', 'd1'].sort()
+  console.log('候補:', candidates.map(t => t.id).join(','), '→ 残る:', got.join(','))
   const cases: [string, boolean][] = [
-    ['A 期日超過で放置 → 出る', got.includes('a2')],
-    ['A の理由は期日超過', reasonOf('a2') === 'overdue'],
-    ['A の古い行は出ない', !got.includes('a1')],
-    ['B 進捗が動いている → 出ない', !got.includes('b1') && !got.includes('b2')],
-    ['C 後で完了 → 出ない', !got.includes('c1') && !got.includes('c2')],
-    ['D 定期タスク → 出ない', !got.includes('d1')],
-    ['E 期日は先でも停滞 → 出る', got.includes('e2')],
-    ['E の理由は停滞', reasonOf('e2') === 'stale'],
-    ['F 順調 → 出ない', !got.includes('f1') && !got.includes('f2')],
-    ['G 他人の完了は影響しない', got.includes('a2')],
+    ['A 後日完了 → 消える', !got.includes('a1')],
+    ['B 未完了のまま → 最新行だけ残る', got.includes('b2') && !got.includes('b1')],
+    ['C 期日延長 → 古い行が消える', !got.includes('c1')],
+    ['D 1回だけの未完了 → 残る', got.includes('d1')],
+    ['E 他人の同名完了は影響しない', got.includes('b2')],
   ]
   let fail = 0
   for (const [name, ok] of cases) { if (!ok) fail++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`) }
-  console.log(fail === 0 ? 'ALL PASS' : `${fail} FAILED`)
+  console.log(JSON.stringify(got) === JSON.stringify(expected) && fail === 0 ? 'ALL PASS' : `${fail} FAILED (got ${got})`)
   process.exit(fail ? 1 : 0)
 }
 main()

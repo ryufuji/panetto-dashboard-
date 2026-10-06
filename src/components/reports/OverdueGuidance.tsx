@@ -11,9 +11,6 @@ export function OverdueGuidance() {
         <li><span className="font-medium">すでに終わっているもの</span> — 「表示」から該当の日報を開き、進捗を100%（またはステータスを「完了」）にすると、この一覧から消えます。</li>
         <li><span className="font-medium">今日は手を付けないもの</span> — 取り込んだうえで、タスクの削除ボタンから「今日は実施しない」を選べば、日報に載せずに翌日へ持ち越せます。</li>
       </ul>
-      <p className="text-xs text-amber-800 pt-1">
-        毎日引き継いで進捗が動いているタスクは、対応中とみなして表示していません。「自分のみ」では、進捗がしばらく動いていないタスクもあわせて表示します。
-      </p>
     </div>
   )
 }

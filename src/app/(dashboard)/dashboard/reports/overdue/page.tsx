@@ -18,8 +18,6 @@ interface OverdueRow {
   report_id: string
   report_date: string
   user_name?: string
-  reason: 'overdue' | 'stale'
-  stale_days: number
 }
 
 export default function OverdueTasksPage() {
@@ -44,13 +42,10 @@ export default function OverdueTasksPage() {
         .single()
       if (!profile) return
 
-      // 判定に必要なのは直近の推移だけ。全件取得すると件数上限で黙って切られるため範囲を区切る
-      const since = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)
       let reportsQuery = supabase
         .from('reports')
         .select('id, report_date, user_id, user:users(name)')
         .in('status', ['submitted', 'approved'])
-        .gte('report_date', since)
 
       if (scope === 'mine') {
         reportsQuery = reportsQuery.eq('user_id', user.id)
@@ -69,30 +64,24 @@ export default function OverdueTasksPage() {
       const userMap = new Map(reports.map((r: any) => [r.id, r.user?.name || '']))
       const userIdMap = new Map(reports.map((r: any) => [r.id, r.user_id]))
 
-      // 「期日超過」だけでなく「進捗が止まっている」も拾うため、期日では絞り込まない
       const { data: tasks } = await supabase
         .from('report_tasks')
         .select('id, title, due_date, progress_rate, task_status, report_id')
         .in('report_id', reportIds)
-        .is('parent_task_id', null)
+        .lt('due_date', today)
         .lt('progress_rate', 100)
-        .limit(1000)
+        .order('due_date', { ascending: true })
+        .limit(200)
 
-      const current = await filterCurrentOverdue(supabase, tasks || [], reportIds, dateMap, userIdMap, today)
+      const current = await filterCurrentOverdue(supabase, tasks || [], reportIds, dateMap, userIdMap)
 
       if (!cancelled) {
         const enriched = current
-          // 「組織全体」は管理側が眺める画面なので期日超過だけに絞る。
-          // 停滞（進捗が動いていない）は本人が気づくためのものなので「自分のみ」で出す。
-          .filter(({ reason }) => scope === 'mine' || reason === 'overdue')
-          .map(({ task: t, reason, staleDays }) => ({
+          .map((t: any) => ({
             ...t,
-            reason,
-            stale_days: staleDays,
             report_date: dateMap.get(t.report_id) || '',
             user_name: userMap.get(t.report_id) || '',
           }))
-          .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))
         setRows(enriched)
         setLoading(false)
       }
@@ -115,11 +104,7 @@ export default function OverdueTasksPage() {
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <AlertTriangle className="h-7 w-7 text-red-500" />期日遅れタスク
           </h1>
-          <p className="text-muted-foreground">
-            {scope === 'mine'
-              ? '期日を過ぎたタスクと、しばらく進捗が動いていないタスクを表示します。毎日引き継いで対応中のものは出ません'
-              : '期日を過ぎたタスクを表示します。進捗が動いていないタスクは「自分のみ」に切り替えると表示されます'}
-          </p>
+          <p className="text-muted-foreground">期日を過ぎた未完了のタスクを一覧表示します。同じタスクは最新の日報の状態で判定します</p>
         </div>
         <Button asChild size="sm">
           <a href="/dashboard/reports/new"><Plus className="mr-1 h-4 w-4" />日報を作成して取り込む</a>
@@ -160,16 +145,13 @@ export default function OverdueTasksPage() {
             <ul className="divide-y">
               {filtered.map(t => (
                 <li key={t.id} className="flex items-center justify-between py-2 text-sm gap-2">
-                  <span className="text-red-600 tabular-nums w-24">{t.due_date || '期日なし'}</span>
+                  <span className="text-red-600 tabular-nums w-24">{t.due_date}</span>
                   <span className="flex-1 truncate">{t.title}</span>
                   {scope === 'org' && t.user_name && (
                     <span className="text-xs text-muted-foreground w-24 truncate text-right">{t.user_name}</span>
                   )}
                   <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">{t.progress_rate}%</span>
                   {t.task_status && <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">{t.task_status}</span>}
-                  <span className={`text-xs px-2 py-0.5 rounded whitespace-nowrap ${t.reason === 'overdue' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {t.reason === 'overdue' ? '期日超過' : `${t.stale_days}日間 進捗なし`}
-                  </span>
                   <Button asChild variant="link" size="sm" className="h-6 px-1 text-xs">
                     <a href={`/dashboard/reports/${t.report_id}`}>表示</a>
                   </Button>
