@@ -103,6 +103,8 @@ const UPSERT_CHUNK = 500
 const PAGE_SIZE = 1000
 /** .in() に渡すIDの数。UUID を並べすぎると URL が長くなりリクエストが落ちる */
 const IN_CHUNK = 100
+/** 作られたばかりで中身がまだ入っていない日報を消さないための猶予 */
+const EMPTY_REPORT_GRACE_MS = 5 * 60 * 1000
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = []
@@ -247,8 +249,36 @@ export async function syncTasksToDb(
     if (error) errors.push(`日報の件数更新に失敗: ${error.message}`)
   }
 
-  // タスクが1件も残らなかった日報を片付ける
-  const emptyReportIds = reportRows.filter(r => (counts.get(r.id)?.total ?? 0) === 0).map(r => r.id)
+  // タスクが1件も残っていない日報を片付ける。
+  // 以前は今回触れた日報しか見ていなかったため、過去に空になったものが残り続けていた。
+  // ただし、ちょうど今作られて中身がまだ入っていない日報を消さないよう、
+  // 作成から時間が経ったものだけを対象にする。
+  const orphanSet = new Set(orphanIds)
+  const reportIdsWithTasks = new Set([
+    ...existingTasks.filter(t => !orphanSet.has(t.id)).map(t => t.report_id),
+    ...taskRows.map(t => t.report_id),
+  ])
+  const createdBefore = new Date(Date.now() - EMPTY_REPORT_GRACE_MS).toISOString()
+
+  const allReports: { id: string; created_at: string }[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('store_daily_reports')
+      .select('id, created_at')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) {
+      errors.push(`日報の読み出しに失敗: ${error.message}`)
+      break
+    }
+    if (!data || data.length === 0) break
+    allReports.push(...(data as typeof allReports))
+    if (data.length < PAGE_SIZE) break
+  }
+
+  const emptyReportIds = allReports
+    .filter(r => !reportIdsWithTasks.has(r.id) && r.created_at < createdBefore)
+    .map(r => r.id)
   for (const part of chunk(emptyReportIds, IN_CHUNK)) {
     const { error } = await supabase.from('store_daily_reports').delete().in('id', part)
     if (error) errors.push(`空の日報の削除に失敗: ${error.message}`)
@@ -284,7 +314,7 @@ export async function POST() {
     )
 
     // Acquire advisory lock so concurrent cron + manual button clicks don't race
-    const { data: lockAcquired } = await supabase.rpc('try_sync_lock', { key: 'tasukaru_sync' })
+    const { data: lockAcquired } = await supabase.rpc('try_sync_lock', { p_key: 'tasukaru_sync' })
     if (lockAcquired === false) {
       return NextResponse.json({ success: true, skipped: 'another sync in progress' })
     }
@@ -307,7 +337,7 @@ export async function POST() {
         ...(errors.length > 0 ? { errors } : {}),
       })
     } finally {
-      await supabase.rpc('release_sync_lock', { key: 'tasukaru_sync' })
+      await supabase.rpc('release_sync_lock', { p_key: 'tasukaru_sync' })
     }
   } catch (err) {
     console.error('[SYNC] Error:', err)

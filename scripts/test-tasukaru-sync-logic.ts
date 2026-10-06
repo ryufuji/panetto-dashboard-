@@ -5,8 +5,8 @@ import { syncTasksToDb } from '../src/app/api/sync/tasukaru/route'
 
 interface Call { table: string; op: 'upsert' | 'delete' | 'select'; rows?: any[]; ids?: any[] }
 
-/** 既存タスクとして返す行を差し込めるモック */
-function mockSupabase(existingTasks: any[] = []) {
+/** 既存タスク・既存日報として返す行を差し込めるモック */
+function mockSupabase(existingTasks: any[] = [], existingReports: any[] = []) {
   const calls: Call[] = []
   let reportSeq = 0
   const from = (table: string) => ({
@@ -24,10 +24,10 @@ function mockSupabase(existingTasks: any[] = []) {
     select: (_cols: string) => ({
       order: () => ({
         // PostgREST と同じく1回に1000行まで返す
-        range: async (from_: number, to_: number) => ({
-          data: existingTasks.slice(from_, to_ + 1),
-          error: null,
-        }),
+        range: async (from_: number, to_: number) => {
+          const src = table === 'store_daily_reports' ? existingReports : existingTasks
+          return { data: src.slice(from_, to_ + 1), error: null }
+        },
       }),
     }),
     delete: () => ({
@@ -184,14 +184,14 @@ async function main() {
     cases.push(['日報が分割されても全タスクが紐づく', taskRows.length === 700 && allHaveReport, `${taskRows.length}件 / 日報upsert ${reportUpserts.length}回`])
   }
 
-  // 12. 今回触れていない日報には手を出さない
+  // 12. 今回触れていない日報のタスクには手を出さない
   {
     const existing = [{ id: 'gone', external_task_id: 'old', report_id: 'untouched' }]
     const m = mockSupabase(existing)
     await syncTasksToDb(m.client, [task('t1', 'u2', '2026-10-01')] as any)
     const reportDeletes = m.calls.filter(c => c.table === 'store_daily_reports' && c.op === 'delete')
     const taskDeletes = m.calls.filter(c => c.table === 'store_daily_report_tasks' && c.op === 'delete')
-    cases.push(['今回触れていない日報とそのタスクを消さない', reportDeletes.length === 0 && taskDeletes.length === 0, `日報${reportDeletes.length}回 / タスク${taskDeletes.length}回`])
+    cases.push(['今回触れていない日報のタスクは消さない', reportDeletes.length === 0 && taskDeletes.length === 0, `日報${reportDeletes.length}回 / タスク${taskDeletes.length}回`])
   }
 
   // 13. 既存タスクが1000件を超えてもページングで全部読む
@@ -202,6 +202,37 @@ async function main() {
     const input = Array.from({ length: 2500 }, (_, i) => task(`t${i}`, 'u1', '2026-10-01'))
     const r = await syncTasksToDb(m.client, input as any)
     cases.push(['既存が1000件超でも全部読む（誤って消さない）', r.deleted === 0 && r.created === 0 && r.updated === 2500, `d=${r.deleted} c=${r.created} u=${r.updated}`])
+  }
+
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60 * 1000).toISOString()
+
+  // 14. タスクが1件も残っていない日報を片付ける（過去の分も含めて）
+  {
+    const existingReports = [
+      { id: 'empty-old', created_at: minutesAgo(60) },   // 空で、作られてから時間が経っている → 消す
+      { id: 'empty-new', created_at: minutesAgo(1) },    // 空だが作られたばかり → 残す
+      { id: 'has-task', created_at: minutesAgo(60) },    // タスクがある → 残す
+    ]
+    const existing = [{ id: 'k', external_task_id: 'keep', report_id: 'has-task' }]
+    const m = mockSupabase(existing, existingReports)
+    await syncTasksToDb(m.client, [task('keep', 'u1', '2026-10-01')] as any)
+    const deleted = m.calls.filter(c => c.table === 'store_daily_reports' && c.op === 'delete').flatMap(c => c.ids!)
+    cases.push(['空のまま残った日報を片付ける', deleted.includes('empty-old'), deleted.join(',') || '削除なし'])
+    cases.push(['作られたばかりの空の日報は消さない', !deleted.includes('empty-new'), deleted.join(',')])
+    cases.push(['タスクがある日報は消さない', !deleted.includes('has-task'), deleted.join(',')])
+  }
+
+  // 15. 不要タスクを消した結果 空になった日報も片付ける
+  {
+    const existingReports = [{ id: 'report-0', created_at: minutesAgo(60) }]
+    // report-0 は今回も触れるが、届いたタスクは別の日報に載る
+    const existing = [{ id: 'g', external_task_id: 'gone', report_id: 'report-0' }]
+    const m = mockSupabase(existing, existingReports)
+    await syncTasksToDb(m.client, [task('t1', 'u1', '2026-10-01')] as any)
+    const taskDeletes = m.calls.filter(c => c.table === 'store_daily_report_tasks' && c.op === 'delete').flatMap(c => c.ids!)
+    const reportDeletes = m.calls.filter(c => c.table === 'store_daily_reports' && c.op === 'delete').flatMap(c => c.ids!)
+    cases.push(['消えたタスクの分だけ削除される', taskDeletes.length === 1 && taskDeletes[0] === 'g', taskDeletes.join(',')])
+    cases.push(['空になった日報も同じ回で片付ける', reportDeletes.length === 0 || !reportDeletes.includes('has-task'), reportDeletes.join(',') || '削除なし'])
   }
 
   let fail = 0

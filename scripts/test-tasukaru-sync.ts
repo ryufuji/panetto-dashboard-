@@ -80,12 +80,13 @@ async function main() {
   const cases: [string, boolean, string][] = [
     ['既存タスクを消さない', after1.tasks.length === before.tasks.length, `${before.tasks.length} → ${after1.tasks.length}`],
     ['既存タスクの内容が変わらない', sameSet(before.tasks, after1.tasks), ''],
+    ['タスクが無い日報は残らない', after1.reports.every(r => after1.tasks.some(t => t.report_id === r.id)), `日報 ${before.reports.length} → ${after1.reports.length}`],
     ['新規作成が発生しない（全部既存）', r1.created === 0, `created=${r1.created}`],
     ['更新件数が入力件数と一致', r1.updated === input.length, `${r1.updated} vs ${input.length}`],
     ['不要タスクの削除が起きない', r1.deleted === 0, `deleted=${r1.deleted}`],
     ['エラーが出ない', r1.errors.length === 0, r1.errors.join(' / ')],
     ['日報の件数が実際のタスク数と合う', countsOk, ''],
-    ['2回流しても状態が変わらない', sameSet(after1.tasks, after2.tasks) && sameSet(after1.reports, after2.reports), ''],
+    ['2回流しても状態が変わらない', sameSet(after1.tasks, after2.tasks) && sameSet(after1.reports, after2.reports), `日報 ${after1.reports.length} → ${after2.reports.length}`],
     ['2回目も結果の件数が同じ', r1.created === r2.created && r1.updated === r2.updated && r1.deleted === r2.deleted, ''],
   ]
 
