@@ -7,7 +7,8 @@
  * イベント:
  *   user.created  : 新規登録 → auth.users + public.users 作成（panet_user_id で UPSERT）
  *   user.updated  : 情報更新 → public.users 更新
- *   user.archived : 退職処理 → is_active=false + auth banned (24h)
+ *   user.archived : 退職処理 → is_active=false + auth banned (100年)
+ *   user.updated  : archived が解けていれば BAN も解除して復職させる
  *
  * payload 例:
  *   {
@@ -257,7 +258,26 @@ export async function POST(request: NextRequest) {
         }
         return NextResponse.json({ error: updErr.message }, { status: 500 })
       }
-      return NextResponse.json({ ok: true, action: 'updated', user_id: userId, email_changed: emailChanged })
+      // 認証側のBAN状態を PANET の在籍状況に合わせる。
+      // これまで退職時にBANするだけで解除していなかったため、PANET 側を在職に戻しても
+      // 認証側はBANされたままで、ログインもパスワード再設定もできなかった
+      // （再設定リンクを開くと user_banned になる）。
+      const bannedUntilRaw = (authUser?.user as { banned_until?: string } | undefined)?.banned_until
+      const isBanned = !!bannedUntilRaw && new Date(bannedUntilRaw).getTime() > Date.now()
+      if (isArchived !== isBanned) {
+        const { error: banErr } = await admin.auth.admin.updateUserById(userId, {
+          ban_duration: isArchived ? '876600h' /* 100年 */ : 'none',
+        })
+        if (banErr) {
+          console.error('[PANET_WEBHOOK] ban state update error:', banErr.message)
+        }
+      }
+
+      return NextResponse.json({
+        ok: true, action: 'updated', user_id: userId,
+        email_changed: emailChanged,
+        ban_changed: isArchived !== isBanned,
+      })
     }
 
     // ── 新規作成 (auth.users + public.users) ──
