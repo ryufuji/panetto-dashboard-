@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Users, Pencil, Loader2, Plus, Upload, Download, Globe } from 'lucide-react'
+import { Users, Pencil, Loader2, Plus, Upload, Download, Globe, KeyRound, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
 const roleLabels: Record<string, string> = { admin: '管理者', manager: '部署長', employee: '一般' }
@@ -25,6 +25,20 @@ interface EditForm {
   report_reviewer_id: string
 }
 
+
+/** PANET にメールアドレスが無い人は {ログインID}@panet.local で作られ、メールが届かない */
+function isUnreachableEmail(email?: string | null) {
+  return !!email && email.toLowerCase().endsWith('@panet.local')
+}
+
+/** 読み上げても取り違えにくい文字だけで作る */
+function generatePassword(length = 12) {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789'
+  const bytes = new Uint32Array(length)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, b => chars[b % chars.length]).join('')
+}
+
 export default function EmployeesPage() {
   const supabase = createClient()
   const [users, setUsers] = useState<any[]>([])
@@ -36,6 +50,9 @@ export default function EmployeesPage() {
   const [editForm, setEditForm] = useState<EditForm>({ employee_number: '', position: '', monthly_salary: '', department_id: '', office_id: '', report_reviewer_id: '' })
   const [saving, setSaving] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [resetTarget, setResetTarget] = useState<any>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [resetting, setResetting] = useState(false)
   const [createForm, setCreateForm] = useState({ email: '', password: '', name: '', employee_number: '', position: '', department_id: '', office_id: '', role: 'employee', report_reviewer_id: '' })
   const [showCsvImport, setShowCsvImport] = useState(false)
   const [csvResults, setCsvResults] = useState<{ email: string; success: boolean; error?: string }[] | null>(null)
@@ -74,6 +91,32 @@ export default function EmployeesPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData() }, [fetchData])
+
+
+  const openResetPassword = (u: any) => {
+    setResetTarget(u)
+    setNewPassword(generatePassword())
+  }
+
+  const submitResetPassword = async () => {
+    if (!resetTarget) return
+    setResetting(true)
+    try {
+      const res = await fetch(`/api/organization/users/${resetTarget.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'パスワードを変更できませんでした')
+      toast.success(`${resetTarget.name} さんのパスワードを変更しました。この画面のパスワードを本人にお伝えください`)
+      setResetTarget(null)
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const openEdit = (u: any) => {
     setEditUser(u)
@@ -303,7 +346,7 @@ export default function EmployeesPage() {
                 <TableHead>権限</TableHead>
                 <TableHead>社員番号</TableHead>
                 <TableHead>確認者</TableHead>
-                {isAdmin && <TableHead className="w-[60px]"></TableHead>}
+                {isAdmin && <TableHead className="w-[96px]"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -312,7 +355,13 @@ export default function EmployeesPage() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">{u.avatar_url && <AvatarImage src={u.avatar_url} alt={u.name} />}<AvatarFallback className="text-xs bg-blue-100 text-blue-700">{u.name?.slice(0, 2)}</AvatarFallback></Avatar>
-                      <div><p className="font-medium text-sm">{u.name}</p><p className="text-xs text-muted-foreground">{u.email}</p></div>
+                      <div>
+                        <p className="font-medium text-sm">{u.name}</p>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                        {isUnreachableEmail(u.email) && (
+                          <p className="text-xs text-amber-700">メールが届かないため、再設定メールは使えません</p>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{u.department?.name || '-'}</TableCell>
@@ -326,9 +375,14 @@ export default function EmployeesPage() {
                   }</TableCell>
                   {isAdmin && (
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="編集">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openResetPassword(u)} title="パスワードを再設定">
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>
@@ -342,6 +396,44 @@ export default function EmployeesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* パスワード再設定 */}
+      <Dialog open={!!resetTarget} onOpenChange={(o) => { if (!o) setResetTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{resetTarget?.name} さんのパスワードを再設定</DialogTitle>
+            <DialogDescription>
+              {isUnreachableEmail(resetTarget?.email)
+                ? 'この方はメールが届かないアドレスで登録されているため、再設定メールは使えません。ここで新しいパスワードを決めて、本人に直接お伝えください。'
+                : '新しいパスワードをここで決めて、本人に直接お伝えします。本人宛の再設定メールは送られません。'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>新しいパスワード</Label>
+              <div className="flex items-center gap-2">
+                <Input value={newPassword} onChange={e => setNewPassword(e.target.value)} className="font-mono" />
+                <Button type="button" variant="outline" size="sm" onClick={() => setNewPassword(generatePassword())}>
+                  作り直す
+                </Button>
+                <Button
+                  type="button" variant="outline" size="sm"
+                  onClick={() => { navigator.clipboard?.writeText(newPassword); toast.success('コピーしました') }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">8文字以上。この画面を閉じると二度と表示されないので、先に控えてください。</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)} disabled={resetting}>キャンセル</Button>
+            <Button onClick={submitResetPassword} disabled={resetting || newPassword.length < 8}>
+              {resetting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />変更中...</> : 'このパスワードに変更する'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* CSV Import Results Dialog */}
       <Dialog open={showCsvImport} onOpenChange={() => { setShowCsvImport(false); setCsvResults(null) }}>
