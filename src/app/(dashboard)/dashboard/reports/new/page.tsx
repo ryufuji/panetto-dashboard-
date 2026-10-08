@@ -20,6 +20,16 @@ import { TaskCarryOverMenu } from '@/components/reports/TaskCarryOverMenu'
 import { PlannedTaskCarryOverMenu } from '@/components/reports/PlannedTaskCarryOverMenu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
+
+/** 未入力の時間を 0h と出すと「入れたのに0」と誤解されるため、入っていなければ「—」にする */
+function formatHours(v: unknown): string {
+  const n = parseFloat(String(v ?? ''))
+  return Number.isFinite(n) && n > 0 ? `${n}h` : '—'
+}
+function sumHours<T>(list: T[], pick: (item: T) => unknown): number {
+  return list.reduce((s, c) => s + (parseFloat(String(pick(c) ?? '')) || 0), 0)
+}
+
 export default function NewReportPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -1332,12 +1342,13 @@ export default function NewReportPage() {
                       <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
                         <span>進捗: {task.progress_rate}%</span>
                         <span>ステータス: {task.task_status}</span>
-                        <span>工数: {taskChildren.length > 0 ? taskChildren.reduce((s, c) => s + (parseFloat(c.estimated_hours) || 0), 0) : (task.estimated_hours || 0)}h</span>
+                        <span>工数: {formatHours(taskChildren.length > 0 ? sumHours(taskChildren, c => c.estimated_hours) : task.estimated_hours)}</span>
+                        <span>実績: {formatHours(task.actual_hours)}</span>
                         <span>優先度: {task.priority === 'high' ? '高' : task.priority === 'low' ? '低' : '中'}</span>
                       </div>
                       {taskChildren.filter(c => c.title).map((c, j) => (
                         <div key={c.id} className="ml-4 text-xs text-muted-foreground">
-                          {i + 1}-{j + 1}. {c.title}（{c.progress_rate}% / {c.estimated_hours || 0}h）
+                          {i + 1}-{j + 1}. {c.title}（{c.progress_rate}% / 工数 {formatHours(c.estimated_hours)} / 実績 {formatHours(c.actual_hours)}）
                         </div>
                       ))}
                     </div>
