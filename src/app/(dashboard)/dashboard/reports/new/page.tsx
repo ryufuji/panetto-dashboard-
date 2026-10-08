@@ -601,6 +601,44 @@ export default function NewReportPage() {
           shared_user_ids: [],
         } as Task)
 
+        // 親に紐づく未完了の子タスクも一緒に引き継ぐ。
+        // 以前は親だけを引き継いでいたため、子タスクが翌日の日報に残らず、
+        // 「過去データから読み込んでも子課題が消える」状態になっていた
+        // （同名の親はスキップされるので、子を足す機会もなかった）。
+        const childrenOf = (allTasks as any[]).filter(
+          c => c.parent_task_id === t.id && (c.progress_rate ?? 0) < 100 && !isTaskClosed(c.task_status),
+        )
+        for (const c of childrenOf) {
+          additions.push({
+            id: crypto.randomUUID(),
+            title: c.title || '',
+            description: c.description || '',
+            estimated_hours: c.estimated_hours != null ? String(c.estimated_hours) : '',
+            actual_hours: '',  // 実績はその日の作業時間なので持ち越さない
+            progress_rate: c.progress_rate ?? 0,
+            task_type: c.task_type || '',
+            priority: c.priority || 'medium',
+            start_date: c.start_date || today,
+            due_date: c.due_date && c.due_date >= today ? c.due_date : today,
+            parent_id: parentLocalId,
+            approval: defaultApproval(),
+            task_status: c.task_status || '未着手',
+            purpose: c.purpose || '',
+            memo: c.memo || '',
+            actual_url: c.actual_url || '',
+            target_norma_count: c.target_norma_count != null ? String(c.target_norma_count) : '',
+            target_norma_amount: c.target_norma_amount != null ? String(c.target_norma_amount) : '',
+            today_result_count: '',
+            today_result_amount: '',
+            no_norma: !!c.no_norma,
+            no_due_date: !!c.no_due_date,
+            is_recurring: !!c.is_recurring,
+            recurrence_pattern: c.recurrence_pattern || undefined,
+            is_omitted: false,
+            is_skipped_today: false,
+            shared_user_ids: [],
+          } as Task)
+        }
       }
 
       if (additions.length === 0) return
@@ -609,12 +647,19 @@ export default function NewReportPage() {
         const existingTitles = new Set(prev.filter(t => t.title.trim() && !t.parent_id).map(t => t.title.trim()))
         const parentAdditions = additions.filter(a => !a.parent_id && !existingTitles.has(a.title.trim()))
         if (parentAdditions.length === 0) return prev
+        // 追加する親に紐づく子だけを連れていく
+        const addedParentIds = new Set(parentAdditions.map(a => a.id))
+        const childAdditions = additions.filter(a => a.parent_id && addedParentIds.has(a.parent_id))
         const baseline = prev.length === 1 && !prev[0].title.trim() ? [] : prev
-        return [...baseline, ...parentAdditions]
+        return [...baseline, ...parentAdditions, ...childAdditions]
       })
 
       const parentCount = additions.filter(a => !a.parent_id).length
-      toast.success(`未完了タスク ${parentCount} 件を前回日報から引き継ぎました`)
+      const childCount = additions.filter(a => a.parent_id).length
+      toast.success(
+        `未完了タスク ${parentCount} 件を前回日報から引き継ぎました` +
+        (childCount > 0 ? `（子タスク ${childCount} 件を含む）` : ''),
+      )
     } catch (err) {
       console.error('[REPORT_NEW] autoIngestIncompleteTasks failed:', err)
     }
