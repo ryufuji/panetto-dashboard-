@@ -349,7 +349,14 @@ export type LineWorksTaskInfo = {
   description?: string | null
   purpose?: string | null          // 目的・背景 (メモとは別行で出力)
   actual_url?: string | null       // 進行中・実績URL (証跡)
-  children?: { title: string }[]   // 子タスクタイトルのみ
+  children?: {
+    title: string
+    progress_rate?: number | null
+    actual_hours?: number | null
+    memo?: string | null
+    description?: string | null
+    due_date?: string | null
+  }[]
 }
 
 export type LineWorksPlannedTask = {
@@ -479,9 +486,21 @@ export function formatReportSubmittedMessage(params: {
       lines.push(`証跡: ${t.actual_url.trim()}`)
     }
 
-    // 子タスクは小さなドット
+    // 子タスクも、進捗や実績・メモまで出す。
+    // タイトルだけだと「今どこまで進んでいるか」が通知から読み取れず、
+    // 詳細をタイトルに書き足して運用する人が出ていた。
     for (const c of t.children || []) {
-      if (c.title && c.title.trim()) lines.push(`・${c.title.trim()}`)
+      if (!c.title || !c.title.trim()) continue
+      const cMeta: string[] = []
+      if (c.progress_rate !== null && c.progress_rate !== undefined) cMeta.push(`進捗${c.progress_rate}％`)
+      if (c.actual_hours !== null && c.actual_hours !== undefined) cMeta.push(`実績${c.actual_hours}h`)
+      if (c.due_date) cMeta.push(`期日${c.due_date}`)
+      lines.push(`・${c.title.trim()}${cMeta.length > 0 ? `(${cMeta.join('/')})` : ''}`)
+      const cMemo = (c.memo && c.memo.trim()) || (c.description && c.description.trim()) || ''
+      if (cMemo) {
+        // 親のメモと見分けられるよう字下げする
+        for (const line of cMemo.split('\n')) lines.push(`　${line}`)
+      }
     }
 
     lines.push('')
