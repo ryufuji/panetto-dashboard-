@@ -47,10 +47,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // 名前フィルタが指定されていれば、対象 user_id を先に絞り込む
   let userIdsForFilter: string[] | null = null
   if (userQuery) {
+    // 社員名は「姓 名」と空白入りで登録されているため、name への部分一致だけだと
+    // 「大串里江」のように続けて入力したときにヒットしない。
+    // 空白を除いた形(name_searchable)とも照合する。検索語側の空白も落として比べる。
+    const normalizedQuery = userQuery.replace(/[\s　・]/g, '')
+    const escaped = (v: string) => v.replace(/[,()]/g, ' ')
     const { data: matchedUsers } = await supabase
       .from('users')
       .select('id')
-      .ilike('name', `%${userQuery}%`)
+      .or(`name.ilike.%${escaped(userQuery)}%,name_searchable.ilike.%${escaped(normalizedQuery)}%`)
       .limit(500)
     userIdsForFilter = (matchedUsers || []).map((u: any) => u.id)
     if (userIdsForFilter.length === 0) {
