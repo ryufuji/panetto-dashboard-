@@ -104,8 +104,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     reportsQuery = reportsQuery.in('user_id', userIdsForFilter)
   }
 
-  // 名前/部署フィルタ時は store_daily_reports は対象外（タス軽くんはユーザーIDで紐付かない）
-  const skipStoreReports = !!params.status || !!userQuery || !!departmentId
+  // 店舗日報（タス軽くん由来）は社員マスタとユーザーIDで紐付かないため、
+  // ステータスや部署では絞り込めない。氏名だけは external_user_name で照合できるので対象にする。
+  // こちらも「姓 名」と空白入りで入るため、空白を除いた比較も併せて行う。
+  const skipStoreReports = !!params.status || !!departmentId
   const storeReportsPromise = skipStoreReports
     ? Promise.resolve({ data: [] as any[], count: 0 })
     : (() => {
@@ -115,6 +117,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           .order('report_date', { ascending: false })
           .limit(fetchCap)
         if (dateFilter) q = q.eq('report_date', dateFilter)
+        if (userQuery) {
+          const escaped = (v: string) => v.replace(/[,()]/g, ' ')
+          const spaced = escaped(userQuery).replace(/(.)/g, '$1%')
+          // 「大串里江」でも「大串 里江」に当たるよう、1文字ずつの間に % を挟んで照合する
+          q = q.or(`external_user_name.ilike.%${escaped(userQuery)}%,external_user_name.ilike.%${spaced}`)
+        }
         return q
       })()
 
